@@ -82,3 +82,4 @@ faces_db/
 *.pkl
 # PAL Robotics third-party packages (have their own git repos)
 src/
+papers/
