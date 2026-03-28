@@ -3,7 +3,6 @@
 **ROS 1 Melodic + Python 3.6 (Docker) + Python 3.10 (Host)**
 
 > This manual takes you from ZERO to running the embodied AI agent on a real TIAGo robot.
-> Every command is extracted from actual bash history and proven workflows.
 
 ---
 
@@ -141,7 +140,7 @@ git --version
 
 ```bash
 cd ~/Desktop  # or wherever
-git clone <your-repo-url>
+git clone https://github.com/Abderrahmeneben8/TIAGo_Benhamlaoui.git
 cd tiago-embodied-agent
 
 # Verify contents
