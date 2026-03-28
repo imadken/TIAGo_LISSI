@@ -1,0 +1,23 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# YOLO detection service — lightweight Python 3.10 image
+# Runs on the host as an HTTP microservice (port 5001).
+# GPU is used automatically if NVIDIA drivers + nvidia-container-toolkit are
+# installed and the container is started with --gpus all.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libsm6 libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    ultralytics>=8.0.0 \
+    opencv-python-headless>=4.5.0 \
+    numpy>=1.22.0 \
+    flask>=2.0.0
+
+WORKDIR /workspace
+CMD ["python3", "yolo_service.py"]

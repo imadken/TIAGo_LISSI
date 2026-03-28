@@ -1,0 +1,328 @@
+% ============================================================
+%  CHAPTER 6 — Vision-Language Reasoning
+% ============================================================
+\chapter{Vision-Language Reasoning}
+\label{ch:vlm}
+
+\section{Overview}
+
+The reasoning backbone of the agent is \textbf{Google Gemini 2.0 Flash}, a multimodal
+large language model accessed via the Google Generative Language REST API.
+At each step of the control loop, the VLM receives the current camera image, a list
+of YOLO detections, the robot's state, and the user's command, and responds with
+a structured JSON object nominating which skill to execute next and why.
+
+This chapter describes the VLM client implementation, the prompt design, the
+structured output schema, and the retry and fallback mechanisms.
+
+\section{Model Selection}
+
+\begin{table}[H]
+\centering
+\caption{VLM selection criteria and outcome.}
+\label{tab:vlm_select}
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{Criterion} & \textbf{Gemini 2.0 Flash} & \textbf{GPT-4o} \\
+\midrule
+Latency            & 0.4--1.0 s                & 0.8--2.0 s \\
+Cost per image     & $\approx$\$0.005          & $\approx$\$0.015 \\
+Python 3.6 compat. & Yes (REST only)            & Yes (REST only) \\
+Context window     & 1M tokens                  & 128K tokens \\
+Spatial reasoning  & Strong                     & Strong \\
+JSON reliability   & High                       & High \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Gemini 2.0 Flash was selected as the primary model due to its cost efficiency,
+lower latency, and 1M-token context window, which allows embedding the full task
+history and image without truncation.
+
+\section{Implementation: VLMReasoner}
+
+The \texttt{VLMReasoner} class encapsulates all API interactions.
+It is initialised with a Google API key and communicates exclusively via the
+\texttt{requests} library, making it compatible with Python 3.6.
+
+\begin{lstlisting}[language=Python, caption={VLMReasoner initialisation.}]
+class VLMReasoner:
+    def __init__(self, api_key=None, model_name="gemini-2.0-flash"):
+        self.api_key  = api_key or os.environ.get("EDENAI_API_KEY", "")
+        self.api_url  = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "{}:generateContent?key={}".format(model_name, self.api_key)
+        )
+        self.conversation_history = []   # rolling window of 20 turns
+\end{lstlisting}
+
+\section{Image Encoding}
+
+Before sending to the API, each image undergoes three preprocessing steps:
+
+\begin{enumerate}
+  \item \textbf{Resize}: the longest dimension is clamped to 640 px, preserving the
+        aspect ratio.
+  \item \textbf{JPEG compression}: quality 85 — balances visual fidelity against
+        token cost.
+  \item \textbf{Base64 encoding}: the JPEG bytes are encoded to a UTF-8 string for
+        inline embedding in the JSON payload.
+\end{enumerate}
+
+At 640$\times$480 JPEG quality 85, each image is approximately 40--60 KB, costing
+roughly \$0.003--0.005 per API call.
+
+\section{Prompt Design}
+\label{sec:prompts}
+
+\subsection{System Prompt}
+
+The system prompt establishes the robot's identity, provides the current state,
+lists available skills, and constrains the output format.
+It is rebuilt at each query to embed the latest robot state.
+
+\begin{mdframed}[style=promptbox]
+\small
+\begin{verbatim}
+You are TIAGo, a mobile manipulator robot with an arm,
+gripper, and omnidirectional base.
+
+**Current State:**
+- Gripper: {gripper_status}
+- Base Location: {base_location}
+- Detected Objects: {detected_objects}
+- Recent Tasks: {last_3_tasks}
+
+**Available Skills:**
+grab_bottle() - Grasp any detected object (bottle, phone,
+  cup, mug, etc.) in front of the robot using vision and
+  arm control.
+search_with_head(object_name='bottle') - Move head to scan
+  surroundings for object.
+handover_to_person(object='bottle') - Detect person with
+  YOLO+depth, extend arm toward them, and hand over held
+  object.
+go_home() - Move arm to home/rest position.
+wave() - Wave at person as a greeting gesture.
+open_hand() - Open the robot gripper hand.
+close_hand() - Close the robot gripper hand.
+
+**Instructions:**
+- Analyze the image to understand the visual scene.
+- Choose ONE skill to execute next that makes progress
+  toward the user's goal.
+- Consider spatial relationships, object locations, and
+  current robot state.
+- If the object needed is NOT visible, use search_with_head
+  FIRST before attempting to grab.
+- Only choose grab_bottle if a graspable object is actually
+  visible/detected.
+- Explain your reasoning briefly (1-2 sentences).
+- Respond ONLY with valid JSON in this exact format:
+{
+  "skill": "skill_name",
+  "parameters": {},
+  "rationale": "Why this skill makes sense"
+}
+Do not include any text before or after the JSON.
+\end{verbatim}
+\end{mdframed}
+
+\subsection{User Prompt}
+
+The user prompt appends the YOLO detections in a structured list format, with pixel
+coordinates and confidence scores:
+
+\begin{mdframed}[style=promptbox]
+\small
+\begin{verbatim}
+User request: "Grab the bottle and give it to me"
+
+Detected objects (YOLO):
+- bottle @ bbox(142, 201, 85, 178) confidence=0.87
+- person @ bbox(310, 120, 200, 380) confidence=0.93
+
+What skill should I execute next?
+\end{verbatim}
+\end{mdframed}
+
+\subsection{Multi-Step Continuation Prompt}
+
+For the second and subsequent steps, the prompt is augmented with what has already
+been done:
+
+\begin{mdframed}[style=promptbox]
+\small
+\begin{verbatim}
+Original task: "Grab the bottle and give it to me"
+Completed so far: search_with_head, grab_bottle
+
+If the original task is FULLY complete, respond with
+skill='done'. Otherwise, what skill should execute next?
+\end{verbatim}
+\end{mdframed}
+
+\subsection{Affordance Failure Prompt}
+
+When a skill's affordance check fails, the failure reason is fed back to the VLM
+so it can select a different skill:
+
+\begin{mdframed}[style=promptbox]
+\small
+\begin{verbatim}
+Original task: "Grab the bottle and give it to me"
+Completed so far: nothing yet
+Could NOT execute 'grab_bottle' because: No graspable
+object detected in scene.
+Choose a different skill to make progress (e.g.
+search_with_head if object not visible).
+\end{verbatim}
+\end{mdframed}
+
+\section{API Request Structure}
+
+The Gemini REST API accepts a JSON payload with the image embedded inline.
+System and user prompts are concatenated into a single text part:
+
+\begin{lstlisting}[language=JSON, caption={Gemini API request payload structure.}]
+{
+  "contents": [{
+    "parts": [
+      {
+        "text": "<SYSTEM PROMPT>\n\n<USER PROMPT>"
+      },
+      {
+        "inline_data": {
+          "mime_type": "image/jpeg",
+          "data": "<BASE64_ENCODED_JPEG>"
+        }
+      }
+    ]
+  }]
+}
+\end{lstlisting}
+
+\section{Response Parsing}
+
+The API returns a JSON response from which the generated text is extracted:
+
+\begin{lstlisting}[language=Python, caption={Response extraction and JSON parsing.}]
+response_text = (result_data['candidates'][0]
+                             ['content']['parts'][0]
+                             ['text'].strip())
+
+# Strip markdown code fences if present (Gemini sometimes wraps output)
+if response_text.startswith("```"):
+    response_text = response_text.split("```")[1]
+    if response_text.startswith("json"):
+        response_text = response_text[4:]
+    response_text = response_text.strip()
+
+result = json.loads(response_text)
+# result = {"skill": "...", "parameters": {...}, "rationale": "..."}
+\end{lstlisting}
+
+\subsection{Output Schema}
+
+\begin{lstlisting}[language=JSON, caption={VLM output JSON schema.}]
+{
+  "skill":      "grab_bottle",
+  "parameters": {},
+  "rationale":  "A bottle is visible at bbox(142,201,85,178)
+                 with 87% confidence. Gripper is empty.
+                 I will attempt to grasp it."
+}
+\end{lstlisting}
+
+The \texttt{skill} field must match exactly one of the available skill names.
+The \texttt{parameters} field carries optional skill-specific arguments
+(\eg \texttt{\{"object\_name": "bottle"\}} for \texttt{search\_with\_head}).
+The \texttt{rationale} is spoken aloud via TTS (truncated to 200 characters) and
+logged for debugging.
+
+\section{Retry Logic and Fallback}
+
+The \texttt{query()} method retries up to 3 times on both JSON parse errors and
+API communication errors:
+
+\begin{lstlisting}[language=Python, caption={Retry logic.}]
+for attempt in range(retry):      # retry = 3
+    try:
+        response = requests.post(self.api_url, json=payload, timeout=30)
+        response.raise_for_status()
+        result = json.loads(response_text)
+        return result
+    except json.JSONDecodeError:
+        if attempt == retry - 1:
+            return {'skill': 'go_home', 'parameters': {},
+                    'rationale': 'VLM unavailable - safe default'}
+        time.sleep(1)
+    except Exception:
+        if attempt == retry - 1:
+            raise
+        time.sleep(2)
+\end{lstlisting}
+
+On persistent failure after all retries, the safe fallback skill \texttt{go\_home}
+is returned, ensuring the robot returns to a safe pose rather than taking no action.
+
+\section{Post-Execution Verification}
+
+After a skill executes, the VLM can optionally verify success by comparing before
+and after images:
+
+\begin{lstlisting}[language=Python, caption={Verification API call with two images.}]
+payload = {
+    "contents": [{
+        "parts": [
+            {"text": "BEFORE image:"},
+            {"inline_data": {"mime_type": "image/jpeg", "data": pre_b64}},
+            {"text": "AFTER image:"},
+            {"inline_data": {"mime_type": "image/jpeg", "data": post_b64}},
+            {"text": verification_prompt}
+        ]
+    }]
+}
+\end{lstlisting}
+
+The verification prompt asks the VLM to respond with:
+\begin{lstlisting}[language=JSON]
+{
+  "success": true,
+  "observation": "The gripper is now closed around the bottle.",
+  "issue": ""
+}
+\end{lstlisting}
+
+\section{Conversation History}
+
+The \texttt{VLMReasoner} maintains a rolling window of the last 20
+\texttt{(user\_command, response)} pairs with timestamps.
+This context is not currently injected into subsequent prompts (each query is
+stateless at the API level) but is available for debugging and future extensions
+where session memory is desired.
+
+\section{Latency Analysis}
+
+Gemini 2.0 Flash API latency depends on image size, prompt length, and network
+conditions.
+Table~\ref{tab:vlm_latency} shows typical values observed during testing.
+
+\begin{table}[H]
+\centering
+\caption{Observed Gemini 2.0 Flash API latency.}
+\label{tab:vlm_latency}
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Minimum         & $\approx$ 0.4 s \\
+Typical         & $\approx$ 0.7 s \\
+Maximum (load)  & $\approx$ 1.5 s \\
+Timeout         & 30 s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This latency is acceptable for a non-real-time reasoning system where each VLM call
+selects the next skill to execute (a decision that takes seconds to execute physically).

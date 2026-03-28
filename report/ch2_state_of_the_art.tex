@@ -1,0 +1,458 @@
+% ============================================================
+%  CHAPTER 2 — State of the Art
+% ============================================================
+\chapter{State of the Art}
+\label{ch:sota}
+
+This chapter surveys the research landscape that this thesis sits within.
+We trace the intellectual lineage from the Transformer architecture and large language
+models (Section~\ref{sec:llm}) through the emergence of the agentic paradigm
+(Section~\ref{sec:agents}), to vision-language models (Section~\ref{sec:vlms}) and
+their application to embodied AI (Section~\ref{sec:embodied}).
+We then cover the more targeted fields of object detection (Section~\ref{sec:detection}),
+3-D localisation and grasping (Section~\ref{sec:grasp}), and close by situating this
+work among its peers (Section~\ref{sec:sota_summary}).
+
+% ============================================================
+\section{The Transformer Revolution and Large Language Models}
+\label{sec:llm}
+% ============================================================
+
+The modern era of AI began in earnest with the Transformer architecture
+\cite{vaswani2017attention} (2017), which replaced recurrent processing with a
+self-attention mechanism that could be scaled to unprecedented model sizes.
+Self-attention allows the model to relate every token in a sequence to every other
+token in a single computation step, giving it a fundamentally richer representational
+capacity than the sequential models (LSTM, GRU) that preceded it.
+
+The scaling insight --- that predictable gains in capability follow from predictable
+increases in parameters, data, and compute --- was crystallised by
+Brown \etal~\cite{brown2020gpt3} in \textbf{GPT-3} (2020, 175B parameters).
+GPT-3 demonstrated \textbf{in-context learning}: by placing a few input-output
+examples in the prompt (``few-shot prompting''), the model could perform tasks it
+had never been explicitly trained on.
+This was a paradigm shift: intelligence was no longer a property of a trained model
+alone, but a property of the \emph{interaction} between a model and a prompt.
+
+\textbf{GPT-4} \cite{achiam2023gpt4} (2023) extended this further, showing strong
+performance on bar exams, coding challenges, and scientific reasoning.
+The observation that larger models exhibited qualitatively new capabilities that smaller
+models lacked --- \emph{emergent abilities} --- suggested that continued scaling would
+yield further unpredictable improvements.
+
+A key alignment technique enabling safe deployment of these models is
+\textbf{Reinforcement Learning from Human Feedback (RLHF)}, which fine-tunes the base
+model to follow instructions, avoid harmful outputs, and produce useful responses.
+Instruction-tuned variants (InstructGPT, Claude, Gemini) became the practical interface
+through which developers interact with these systems.
+
+% ============================================================
+\section{The Agentic Paradigm: From Completion to Action}
+\label{sec:agents}
+% ============================================================
+
+A plain LLM is a text completer: given a prompt, it predicts the next token.
+The \textbf{agentic paradigm} transforms this into an \emph{actor}: a system that
+perceives its environment, reasons about what to do, invokes tools, observes the results,
+and repeats --- all in a loop.
+
+\subsection{Chain-of-Thought Reasoning}
+
+The first key building block is \textbf{Chain-of-Thought (CoT) prompting}
+\cite{wei2022cot}.
+Wei \etal showed that prompting a model to produce intermediate reasoning steps
+(``think step by step'') before its final answer dramatically improved performance on
+mathematical, logical, and commonsense reasoning tasks.
+The implication is that LLMs do not merely pattern-match to an answer --- they can
+compose a reasoning chain through latent space that arrives at correct conclusions they
+could not reach in a single step.
+CoT is now standard practice in all serious VLM prompting for robotics: the
+\texttt{rationale} field in our system prompt serves exactly this function, forcing
+the model to articulate its reasoning before committing to a skill selection.
+
+\subsection{ReAct: Interleaving Reasoning and Acting}
+
+The conceptual leap from CoT to agency was formalised by Yao \etal in
+\textbf{ReAct} \cite{yao2022react} (2022).
+The key idea is to interleave \emph{Reasoning} traces and \emph{Acting} steps in the
+same generation:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Thought:} ``The user wants the bottle. I can see one on the table.''
+  \item \textbf{Action:} \texttt{grab\_bottle()}
+  \item \textbf{Observation:} ``Gripper is now closed. Bottle lifted.''
+  \item \textbf{Thought:} ``Task partially complete. User is standing nearby. I should
+        hand over.''
+  \item \textbf{Action:} \texttt{handover\_to\_person()}
+\end{enumerate}
+This structure --- Thought / Action / Observation loop --- is the direct intellectual
+ancestor of the perceive-reason-act loop implemented in this work.
+The VLM's \texttt{rationale} field is the Thought; the \texttt{skill} field is the
+Action; the updated state and new image on the next iteration are the Observation.
+
+\subsection{Tool-Augmented LLMs}
+
+Tool use extended LLMs beyond text generation.
+Code Interpreter, web search, and database query tools gave models access to external
+knowledge and computation.
+In the robotics context, \textbf{Code as Policies} \cite{liang2023code} showed that
+LLMs could generate executable Python code that called robot APIs, and
+\textbf{Inner Monologue} \cite{huang2022inner} demonstrated that feeding back
+execution outcomes (``the gripper failed to close'') as natural-language observations
+into the LLM prompt enabled the model to adapt its plan on the fly.
+
+The common thread across all these approaches is the \textbf{skill library} or
+\emph{tool set}: a collection of named, documented functions that the LLM can invoke.
+The quality of the skill library --- its coverage, its precondition clarity, its
+documentation --- is the primary engineering bottleneck in LLM-based robot systems.
+This thesis contributes a carefully designed skill library tailored to the \tiago{}
+platform and the pick-and-place + handover task domain.
+
+% ============================================================
+\section{Vision-Language Models}
+\label{sec:vlms}
+% ============================================================
+
+LLMs process text; but the physical world is visual.
+\textbf{Vision-Language Models (VLMs)} bridge this gap by jointly embedding images and
+text in a shared representational space, enabling the model to reason about what it sees.
+
+\subsection{Contrastive Pre-training: CLIP}
+
+\textbf{CLIP} (Contrastive Language-Image Pre-training) \cite{radford2021clip} (2021)
+was the foundational VLM insight: by training a dual-encoder (one visual, one textual)
+with a contrastive objective on 400 million internet image-text pairs, one obtains a
+shared embedding space where semantically related images and texts are close.
+CLIP's zero-shot classification capability --- recognise any class by comparing the
+image embedding to text embeddings of class names --- became the backbone of the
+open-vocabulary detection models discussed in Section~\ref{sec:detection}.
+Critically, CLIP showed that language supervision alone, at web scale, is sufficient
+to learn rich visual representations without any manual labelling.
+
+\subsection{Generative VLMs: Flamingo to LLaVA}
+
+The next step was to make VLMs \emph{generative}: given an image and a text prompt,
+produce a text response.
+\textbf{Flamingo} \cite{alayrac2022flamingo} (DeepMind, 2022) fused a frozen vision
+encoder with a frozen language model via cross-attention layers, enabling few-shot
+visual question answering.
+It showed that combining separately trained vision and language towers with a lightweight
+cross-attention bridge was competitive with end-to-end trained models at a fraction of
+the training cost.
+
+\textbf{LLaVA} \cite{liu2023llava} (2023) simplified the architecture further:
+a CLIP vision encoder, a simple linear projection layer, and a fine-tuned LLM.
+This ``visual instruction tuning'' approach, training on GPT-4-generated
+instruction-following data, demonstrated that the key ingredient was not architectural
+complexity but instruction quality.
+LLaVA opened the door to open-source VLMs that could be deployed locally without
+API dependencies.
+
+\subsection{Frontier Models: GPT-4V and Gemini}
+
+\textbf{GPT-4V(ision)} integrated visual input into GPT-4's reasoning chain,
+enabling analysis of charts, diagrams, scenes, and spatial relationships.
+The model could answer questions like ``where is the bottle relative to the cup?''
+with a level of spatial reasoning qualitatively superior to earlier VLMs.
+
+\textbf{Gemini} \cite{team2023gemini} (Google DeepMind, 2023) was the first model
+family built natively multimodal from the ground up --- not a language model
+adapted to vision, but a single model trained on text, images, audio, and video
+simultaneously.
+Gemini 2.0 Flash, the variant used in this work, achieves strong spatial reasoning,
+scene grounding, and structured output at sub-second latency and low API cost,
+making it well-suited as a real-time robot decision engine.
+
+\subsection{Why VLMs for Robot Control?}
+
+The appeal of VLMs for robotics is not simply that they are multimodal.
+Three capabilities are particularly relevant:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Scene grounding without annotations.}  A VLM can localise objects,
+        estimate relative positions, and describe spatial relationships from a raw
+        camera image, with no per-object training required.
+        This replaces brittle template-matching approaches.
+
+  \item \textbf{Common-sense reasoning.}  The model's pretraining on internet text
+        encodes implicit knowledge about objects (bottles contain liquid, people extend
+        their hands to receive objects) that would take years to encode explicitly.
+
+  \item \textbf{Instruction following.}  VLMs natively understand ambiguous natural
+        language commands (``bring me something to drink'') and can resolve the
+        reference in context of what they see --- a key capability for domestic robots.
+\end{enumerate}
+
+Table~\ref{tab:vlm_comparison} summarises the VLMs considered for this project.
+
+\begin{table}[H]
+\centering
+\caption{Vision-Language Models considered for robot reasoning in this work.}
+\label{tab:vlm_comparison}
+\begin{tabularx}{\linewidth}{lXXl}
+\toprule
+\textbf{Model} & \textbf{Strengths} & \textbf{Weaknesses} & \textbf{Used?} \\
+\midrule
+Gemini 2.0 Flash & Fast, cheap, strong spatial reasoning, stable REST API,
+                   native multimodal & Internet required & \textbf{Yes} \\
+GPT-4V / GPT-4o  & Best-in-class reasoning, function calling & Higher cost per image & Evaluated \\
+LLaVA 1.6        & Open-source, deployable locally & Weaker spatial reasoning; GPU required & Evaluated \\
+Groq llama-3.2-vision & Very fast inference & Weaker spatial understanding & Considered \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================
+\section{Foundation Models for Embodied AI}
+\label{sec:embodied}
+% ============================================================
+
+The question of how to go from a VLM's \emph{semantic understanding} to a robot's
+\emph{physical action} has driven a rapidly growing research thread, from which this
+work draws its core inspiration.
+
+\subsection{SayCan: Grounding Language in Affordances}
+
+\textbf{SayCan} \cite{ahn2022saycan} (Google, 2022) was the first influential
+demonstration of LLM-grounded robot task planning.
+Given a high-level instruction (``bring me a Sprite from the fridge''), SayCan uses
+the LLM to generate candidate skill descriptions and a \emph{value function} trained
+on real robot experience to weight those candidates by their current physical
+feasibility.
+The product of language probability and affordance score selects the next skill.
+
+SayCan's key insight --- that \emph{what the robot can do} must constrain \emph{what
+the model suggests it should do} --- directly motivates this work's
+\textbf{affordance gating} system.
+The implementation here is simpler (hard precondition checks rather than a learned
+value function) but serves the same purpose: preventing the model from selecting
+skills that the robot cannot currently execute.
+
+\subsection{Inner Monologue and Code as Policies}
+
+\textbf{Inner Monologue} \cite{huang2022inner} extended the idea by feeding back
+execution outcomes --- perception results, success/failure flags, human corrections
+--- as natural-language observations into the LLM prompt.
+This closed the loop: the LLM became a \emph{reflective planner} that adapted its
+plan based on what was actually happening.
+The affordance feedback loop in this thesis is a direct implementation of this
+principle: precondition failures are injected as text observations into the next
+VLM prompt.
+
+\textbf{Code as Policies} \cite{liang2023code} showed that asking the LLM to
+\emph{write Python code} (rather than select from a discrete skill menu) enabled
+more flexible task decomposition and parameter binding.
+While this work uses discrete skill selection for reliability, Code as Policies
+represents a natural extension for more open-ended task specifications.
+
+\subsection{RT-1 and RT-2: End-to-End Vision-Language-Action}
+
+\textbf{RT-1} \cite{brohan2022rt1} (Google, 2023) trained a Transformer directly
+on 130,000 real robot episodes, mapping raw images and language commands to motor
+actions.
+It demonstrated that large enough datasets enable generalisation to novel objects
+and instructions --- but required enormous data collection infrastructure.
+
+\textbf{RT-2} \cite{brohan2023rt2} went further: it fine-tuned a pre-trained VLM
+(PaLM-E) directly on robot trajectory data, tokenising actions as text tokens.
+The resulting model exhibited remarkable \emph{emergent generalisation}: reasoning
+about tasks described in ways never seen in the robot data
+(``pick up the object that would be used to pick weeds'').
+RT-2 is the clearest demonstration that VLM pretraining transfers to physical robot
+control with sufficient fine-tuning.
+
+\subsection{PaLM-E: Embodied Multimodal Language Model}
+
+\textbf{PaLM-E} \cite{driess2023palme} injected continuous sensor observations
+(camera images, point clouds, robot state) directly into a 562B-parameter LLM as
+``embodied tokens.''
+Planning happened entirely inside the language model, with no separate skill execution
+layer.
+The scale of PaLM-E underscores both the promise (remarkable generalisation) and the
+challenge (infrastructure requirements that are orders of magnitude beyond most labs).
+
+\subsection{VILA, OpenVLA and \boldmath$\pi_0$: The Open-Source Turn}
+
+Recent work has democratised VLA research.
+\textbf{VILA} \cite{lin2024vila} showed that carefully curated multi-image instruction
+tuning data significantly improves VLM reasoning quality, especially on spatial and
+relational queries --- directly relevant for a robot that needs to reason
+``the bottle is to the left of the cup.''
+
+\textbf{OpenVLA} \cite{kim2024openvla} released a fully open 7B-parameter VLA model
+trained on the Open X-Embodiment dataset \cite{brohan2022rt1}, making it the first
+VLA comparable in capability to proprietary models that any researcher could download
+and fine-tune.
+
+\textbf{$\pi_0$} \cite{black2024pi0} introduced \emph{flow matching} as the action
+head, decoupling the high-level VLM reasoning from the low-level trajectory generation.
+This is significant: it suggests a modular architecture where the VLM handles semantics
+and a separate module handles continuous control --- close in spirit to the architecture
+in this thesis, where the VLM selects a skill and a classical planner (MoveIt) handles
+the trajectory.
+
+\subsection{Positioning This Work}
+
+This work occupies a distinct niche in the VLA landscape.
+It uses a \textbf{zero-shot frontier VLM} (Gemini 2.0 Flash) --- no fine-tuning, no
+robot demonstration data --- and \textbf{classical robotic controllers} (MoveIt, RANSAC)
+for the physical execution.
+The trade-off is generality vs. robustness: the system cannot generalise to arbitrary
+novel tasks the way RT-2 can, but it is deployable on any robot in one afternoon with
+only calibration data.
+
+This design is closest in spirit to SayCan (discrete skills + affordance scoring) and
+Inner Monologue (execution feedback in the prompt), but simplifies both: no value
+function learning is required, and the feedback mechanism is a simple string injection.
+Table~\ref{tab:embodied_comparison} summarises the comparison.
+
+\begin{table}[H]
+\centering
+\caption{Positioning this work in the embodied AI landscape.}
+\label{tab:embodied_comparison}
+\small
+\begin{tabularx}{\linewidth}{lXXXr}
+\toprule
+\textbf{System} & \textbf{VLM / LLM} & \textbf{Train data} & \textbf{Skills} & \textbf{Year} \\
+\midrule
+SayCan \cite{ahn2022saycan}   & PaLM             & 68K episodes       & 551 (learned)  & 2022 \\
+RT-2 \cite{brohan2023rt2}     & PaLM-E (FT)      & 130K episodes      & E2E trajectory & 2023 \\
+PaLM-E \cite{driess2023palme} & PaLM-E 562B (FT) & Multi-robot        & E2E planning   & 2023 \\
+OpenVLA \cite{kim2024openvla} & 7B VLM (FT)      & Open X-Embodiment  & E2E trajectory & 2024 \\
+$\pi_0$ \cite{black2024pi0}   & VLM + flow head  & Large-scale demos  & Flow matching  & 2024 \\
+\midrule
+\textbf{This work}            & Gemini 2.0 Flash \textbf{(zero-shot)} & \textbf{None} & 9 (classical) & 2025 \\
+\bottomrule
+\end{tabularx}
+\normalsize
+\end{table}
+
+The ``Training data: None'' row is the defining characteristic: this is the only
+system in the table that can be deployed on a new robot without any data collection.
+
+% ============================================================
+\section{Object Detection}
+\label{sec:detection}
+% ============================================================
+
+\subsection{YOLO Family}
+
+The YOLO (You Only Look Once) family \cite{bochkovskiy2020yolov4} achieves real-time
+object detection through a single-stage architecture: the entire image is processed
+in one forward pass, producing bounding boxes and class labels simultaneously.
+This is in contrast to two-stage detectors (Faster R-CNN, Mask R-CNN), which
+produce region proposals in a first stage and classify them in a second, incurring
+higher latency.
+
+\begin{table}[H]
+\centering
+\caption{YOLO models evaluated in this project (CPU inference times measured on the host machine).}
+\label{tab:yolo_comparison}
+\small
+\begin{tabular}{llll}
+\toprule
+\textbf{Model} & \textbf{Architecture} & \textbf{CPU infer.} & \textbf{Used?} \\
+\midrule
+YOLOv4-tiny   & CSPNet, two heads      & $\sim$50\,ms  & Early versions (Docker) \\
+YOLO-World    & Open-vocab, CLIP text  & $\sim$150\,ms & Benchmarked, rejected \\
+YOLOE-26s-seg & Open-vocab + segment   & $\sim$300\,ms & Benchmarked, rejected \\
+YOLO11n       & Unified arch., nano    & $\sim$18\,ms  & \textbf{Final system} \\
+\bottomrule
+\end{tabular}
+\normalsize
+\end{table}
+
+\textbf{YOLO11n} \cite{ultralytics2024yolo11} (Ultralytics, 2024) is the nano variant
+of the latest unified YOLO architecture.
+Its $\sim$18\,ms CPU inference time makes it the fastest model evaluated, while
+maintaining detection accuracy adequate for the 80 COCO classes used in this work.
+
+\subsection{Open-Vocabulary Detection}
+
+A significant research direction pairs CLIP-like vision-language alignment with
+detection heads to enable \emph{text-prompted detection} of arbitrary classes.
+\textbf{YOLO-World} \cite{cheng2024yoloworld} achieves open-vocabulary detection via
+an in-context vision-language module;
+\textbf{OwlViT} \cite{minderer2022owlvit} uses a ViT backbone;
+\textbf{Grounding DINO} \cite{liu2023gdino} matches region proposals to free-form
+text.
+These models are conceptually compelling for robotics (``pick up the coffee mug''
+without a COCO class), but their CPU inference times (150--500\,ms) are prohibitive
+for our real-time control loop.
+They represent a natural upgrade path when GPU resources are available.
+
+% ============================================================
+\section{3-D Localisation and Robotic Grasping}
+\label{sec:grasp}
+% ============================================================
+
+\subsection{Depth-Based 3-D Localisation}
+
+RGB-D cameras provide per-pixel depth, enabling back-projection of 2-D detections
+into 3-D space.
+\textbf{RANSAC}-based primitive fitting \cite{schnabel2007ransac} extracts geometric
+shapes (planes, spheres, cylinders) from noisy point clouds with high robustness
+to outliers.
+This work uses RANSAC circle fitting in the XY projection of the depth cloud to
+estimate the centre of cylindrical objects --- a principled alternative to raw
+centroid estimation that is more accurate for thin objects.
+
+Learning-based 6-DoF pose estimators (PoseCNN \cite{xiang2018posecnn},
+FoundationPose \cite{wen2024foundationpose}) achieve higher accuracy but require
+object-specific training data or CAD models, which were not available.
+
+\subsection{Data-Driven Grasping}
+
+\textbf{Dex-Net} \cite{mahler2017dexnet} and \textbf{GraspNet-1Billion}
+\cite{fang2020graspnet} trained convolutional networks on millions of simulated
+grasps to predict grasp quality from depth images.
+\textbf{Contact-GraspNet} \cite{sundermeyer2021contact} demonstrated zero-shot
+transfer to novel objects.
+These GPU-dependent approaches are incompatible with the Python 3.6 Docker environment
+but represent a compelling upgrade path once the deployment constraint is lifted.
+
+\subsection{Motion Planning}
+
+\textbf{MoveIt} \cite{sucan2013moveit} is the standard motion planning framework
+for ROS robots.
+It uses OMPL (Open Motion Planning Library) for collision-free path planning in joint
+space and provides time-optimal trajectory parameterisation (TOTG) via IPTP
+\cite{kunz2012totg}.
+This work uses MoveIt for the pre-grasp joint-space move, relying on the torso's
+prismatic geometry for the final vertical descent rather than a Cartesian path
+(which is prone to IK singularities near table height).
+
+% ============================================================
+\section{Summary and Positioning}
+\label{sec:sota_summary}
+% ============================================================
+
+Three insights from the literature directly shaped the design choices in this thesis:
+
+\begin{enumerate}
+
+  \item \textbf{Chain-of-thought and ReAct are the foundation of agentic behaviour.}
+        The VLM in this system is not used as a simple classifier but as a reflective
+        planner: it articulates a rationale before selecting a skill (CoT), and receives
+        execution outcomes as observations that update its plan (ReAct).
+        These patterns are the minimum viable set for reliable multi-step task completion.
+
+  \item \textbf{Zero-shot VLMs can replace large training datasets for task planning.}
+        The performance gap between zero-shot frontier models (Gemini, GPT-4V) and
+        fine-tuned models (RT-2, OpenVLA) has closed dramatically.
+        For task-level decision making in well-defined skill sets, zero-shot VLMs are
+        now competitive and far cheaper to deploy.
+
+  \item \textbf{Affordance gating is non-negotiable.}
+        Every successful system (SayCan, Inner Monologue, Code as Policies) includes
+        a mechanism that prevents the model from selecting infeasible actions.
+        Without it, a single model error cascades into unsafe robot behaviour.
+        This work implements affordance gating as hard precondition checks, the
+        simplest and most transparent variant.
+
+\end{enumerate}
+
+The gap this thesis addresses is \textbf{deployment}: taking the conceptual
+architecture described in the VLA literature and realising it on a physical robot
+with real hardware constraints (Python 3.6, no GPU, ROS Melodic), real sensor noise
+(Xtion depth jitter, partial occlusions), and a real evaluation metric (grasp and
+handover success rate on a physical table).

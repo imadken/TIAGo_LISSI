@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TIAGo Embodied Agent — docker-compose
+#
+# Services:
+#   yolo      — Open-vocab YOLO detection HTTP service  (host Python 3.10)
+#   agent     — ROS Melodic embodied agent              (Docker, --network host)
+#
+# Usage:
+#   # Set your robot IP and host IP first:
+#   export ROBOT_IP=10.68.0.1
+#   export HOST_IP=$(hostname -I | awk '{print $1}')
+#
+#   # Start everything:
+#   docker-compose up -d
+#
+#   # Attach to the agent container:
+#   docker-compose exec agent bash
+#   > python3 embodied_agent.py
+#
+#   # View logs:
+#   docker-compose logs -f yolo
+#   docker-compose logs -f agent
+#
+#   # Stop:
+#   docker-compose down
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+
+  # ── YOLO detection service (runs on host Python, GPU-accelerated) ───────────
+  yolo:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.yolo
+    image: tiago-yolo-service
+    network_mode: host          # must share host network so agent container reaches it
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: python3 yolo_service.py
+    restart: unless-stopped
+    environment:
+      - YOLO_PORT=5001
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── ROS Melodic agent container ─────────────────────────────────────────────
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: tiago-agent
+    network_mode: host          # share host network → sees robot ROS topics directly
+    volumes:
+      - .:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /workspace
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROBOT_IP=${ROBOT_IP:-10.68.0.1}
+      - HOST_IP=${HOST_IP}
+      - EDENAI_API_KEY=${EDENAI_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - CYCLONEDDS_URI=file:///workspace/cyclonedds.xml
+    env_file:
+      - .env
+    command: >
+      bash -c "
+        source /opt/ros/melodic/setup.bash &&
+        source /workspace/pal_ws/devel/setup.bash 2>/dev/null || true &&
+        export ROS_MASTER_URI=http://$${ROBOT_IP:-10.68.0.1}:11311 &&
+        export ROS_IP=$${HOST_IP} &&
+        tail -f /dev/null
+      "
+    # Keep alive so you can exec into it:
+    #   docker-compose exec agent python3 embodied_agent.py
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    depends_on:
+      yolo:
+        condition: service_healthy

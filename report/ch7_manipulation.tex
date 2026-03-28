@@ -1,0 +1,449 @@
+% ============================================================
+%  CHAPTER 7 — Manipulation and Grasping Pipeline
+% ============================================================
+
+\chapter{Manipulation and Grasping Pipeline}
+\label{ch:manipulation}
+
+\section{Overview}
+
+Grasping an object from a table is the core physical capability of the system.
+Despite appearing simple, reliable grasping on a real robot requires solving several
+tightly coupled sub-problems simultaneously: detecting the object and estimating its
+3-D pose, reasoning about the table surface, planning a collision-free arm trajectory,
+and executing the motion with sufficient precision for the gripper to close around the
+object.
+
+This chapter describes the full grasping pipeline developed for TIAGo, from raw RGB-D
+sensor data to a closed gripper holding the object.
+The pipeline is implemented in \texttt{reach\_object\_v5\_torso\_descent\_working.py}
+and is invoked by the \texttt{GrabBottleSkill} inside the agent.
+Although the system was initially developed to grasp bottles, the detection and motion
+pipeline is fully object-agnostic: any object detectable by YOLO11n can be targeted
+by changing the query class.
+
+\section{Pipeline Evolution}
+
+The grasping pipeline was developed iteratively across six versions.
+Each version addressed a specific failure mode identified during real-robot testing.
+Table~\ref{tab:grasp_versions} summarises the evolution.
+
+\begin{table}[H]
+\centering
+\caption{Evolution of the grasping pipeline across versions.}
+\label{tab:grasp_versions}
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{Version} & \textbf{Key change} & \textbf{Problem addressed} \\
+\midrule
+v1 & Basic MoveIt goal, YOLOv8, \texttt{moveit\_commander} &
+     First working prototype; no depth, no pose estimation \\
+v2 & 5-frame detection averaging, aligned depth &
+     Noisy single-frame detections caused arm to miss object \\
+v3 & PAL gripper integration, calibrated offsets &
+     Gripper closed in wrong position relative to arm\_tool\_link \\
+v4 & RANSAC cylinder fit on depth point cloud &
+     Bounding-box centroid inaccurate for thin objects; cylinder gives true centre \\
+v5 & Torso descent for final approach, YOLO11n via HTTP service &
+     MoveIt Cartesian path failed at low wrist heights; torso descent avoids singularities \\
+v6 & MoveJ + MoveL with LSPB velocity profile (planned) &
+     Torso descent is slow and produces an arc path; replace with proper trajectory generation \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Full Pipeline: Version 5}
+
+The complete pipeline executed by \texttt{BottleReacher.run()} consists of nine
+sequential steps, illustrated in Figure~\ref{fig:grasp_pipeline}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  step/.style={rectangle, rounded corners=3pt, draw=darkblue, thick,
+               fill=lightblue!30, minimum width=8cm, minimum height=0.7cm,
+               align=left, font=\small, text width=7.5cm},
+  arr/.style={->, thick, draw=darkblue},
+  lbl/.style={font=\small\bfseries\color{darkblue}, minimum width=1.0cm, align=right},
+  node distance=0.35cm
+]
+  \node[pstep] (s1) {\textbf{Step 1} \quad Tilt head to $-0.5$ rad (looking at table), preserve pan};
+  \node[pstep, below=of s1] (s2) {\textbf{Step 2} \quad Unfold arm (\texttt{play\_motion('unfold\_arm')})};
+  \node[pstep, below=of s2] (s3) {\textbf{Step 3} \quad Open gripper (\texttt{play\_motion('open')})};
+  \node[pstep, below=of s3] (s4) {\textbf{Step 4} \quad Get camera TF once (tf\_echo subprocess)};
+  \node[pstep, below=of s4] (s5) {\textbf{Step 5} \quad Detect object — YOLO11n + RANSAC cylinder fit, 5-frame average};
+  \node[pstep, below=of s5] (s6) {\textbf{Step 6} \quad Add table and object collision boxes to MoveIt scene};
+  \node[pstep, below=of s6] (s7) {\textbf{Step 7} \quad OMPL plan to pre-grasp (above object)};
+  \node[pstep, below=of s7] (s8) {\textbf{Step 8} \quad Torso descent (vertical straight line to grasp)};
+  \node[pstep, below=of s8] (s9) {\textbf{Step 9} \quad Close gripper + raise torso (lift object)};
+
+  \draw[arr] (s1) -- (s2);
+  \draw[arr] (s2) -- (s3);
+  \draw[arr] (s3) -- (s4);
+  \draw[arr] (s4) -- (s5);
+  \draw[arr] (s5) -- (s6);
+  \draw[arr] (s6) -- (s7);
+  \draw[arr] (s7) -- (s8);
+  \draw[arr] (s8) -- (s9);
+\end{tikzpicture}
+\caption{Sequential steps of the v5 grasping pipeline.}
+\label{fig:grasp_pipeline}
+\end{figure}
+
+\section{Object Detection and 3-D Pose Estimation}
+\label{sec:grasp_perception}
+
+\subsection{YOLO11n Detection}
+
+At each perception frame, the current RGB image is encoded as JPEG and sent to the
+YOLO11n HTTP microservice (port 5001) with an \texttt{X-Classes} header specifying
+the target class.
+The service returns bounding boxes $[x, y, w, h]$ in pixel coordinates with associated
+confidence scores.
+The detection with the highest confidence above a threshold $\tau = 0.4$ is selected.
+
+\subsection{Depth Point Cloud Extraction}
+
+Rather than using only the bounding box centroid, the system projects all depth pixels
+within the YOLO bounding box into 3-D space.
+A 4-pixel margin is applied to each edge of the box to discard boundary pixels, which
+typically contain mixed foreground/background depth values.
+
+For each valid pixel $(u, v)$ with depth $d$ (filtered to $0.15 < d < 3.5$ m), the
+camera-frame 3-D point is computed using the pinhole model:
+
+\begin{equation}
+  \mathbf{p}_{\text{cam}} =
+  \begin{pmatrix}
+    \dfrac{(u - c_x) \cdot d}{f_x} \\[8pt]
+    \dfrac{(v - c_y) \cdot d}{f_y} \\[8pt]
+    d
+  \end{pmatrix}
+\end{equation}
+
+where $(f_x, f_y, c_x, c_y)$ are the camera intrinsics from \texttt{/xtion/rgb/camera\_info}.
+Each point is then transformed into the \texttt{base\_footprint} frame:
+
+\begin{equation}
+  \mathbf{p}_{\text{base}} = \mathbf{R}_{\text{cam}}^{\text{base}} \, \mathbf{p}_{\text{cam}}
+                            + \mathbf{t}_{\text{cam}}^{\text{base}}
+\end{equation}
+
+where $\mathbf{R}$ and $\mathbf{t}$ are retrieved once at the start of each grasp
+attempt via a \texttt{rosrun tf tf\_echo} subprocess call.
+
+\subsection{RANSAC Cylinder Fitting}
+\label{sec:ransac}
+
+The projected 3-D point cloud is fitted with a vertical cylinder (axis parallel to
+world $Z$) using RANSAC (Random Sample Consensus).
+The cylinder model is defined by its centre $(c_x, c_y)$ and radius $r$ in the $XY$
+plane; the axis is constrained to be vertical so no axis direction needs to be estimated.
+
+\textbf{RANSAC iteration:}
+\begin{enumerate}[noitemsep]
+  \item Sample 3 random points from the $XY$ projection of the cloud.
+  \item Fit a circle through the 3 points using the circumscribed circle formula:
+        \begin{align}
+          D &= 2\bigl[a_x(b_y - c_y) + b_x(c_y - a_y) + c_x(a_y - b_y)\bigr] \notag \\
+          u_x &= \frac{(a_x^2+a_y^2)(b_y-c_y) + (b_x^2+b_y^2)(c_y-a_y) + (c_x^2+c_y^2)(a_y-b_y)}{D}
+        \end{align}
+  \item Reject if $r \notin [0.015, 0.060]$ m (not a plausible object radius).
+  \item Count inliers: points within 15 mm of the circle circumference.
+  \item Keep the hypothesis with the most inliers.
+\end{enumerate}
+
+After 300 iterations, the best hypothesis is refined using algebraic least-squares on
+all inliers.
+The fit is accepted only if the inlier count exceeds 8 and the inlier ratio exceeds
+$30\%$.
+The estimated quantities are:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Output} & \textbf{Description} \\
+\midrule
+$c_x, c_y$ & Object centre in \texttt{base\_footprint} XY plane \\
+$r$ & Estimated object radius (m) \\
+$z_{\text{top}}$ & 95th percentile of inlier $Z$ values (object top) \\
+$z_{\text{bottom}}$ & 5th percentile of inlier $Z$ values (object base) \\
+$z_{\text{table}}$ & Table surface height (sampled below YOLO box) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Table Height Estimation}
+
+The table surface height $z_{\text{table}}$ is estimated by sampling the depth image
+in a horizontal strip of 8 pixels immediately below the bottom edge of the YOLO
+bounding box — the region where the object meets the table surface.
+The median depth of valid pixels in this strip is back-projected to obtain the table $Z$
+coordinate in \texttt{base\_footprint}.
+This estimate is used to position the MoveIt collision table at the correct height.
+
+\subsection{5-Frame Averaging for Stability}
+
+A single cylinder fit on one frame is sensitive to sensor noise and small camera
+vibrations.
+The system collects 5 successful fits ($\text{inlier\_ratio} > 0.3$) and averages the
+key quantities:
+
+\begin{equation}
+  \hat{c}_x = \frac{1}{5}\sum_{i=1}^{5} c_x^{(i)}, \quad
+  \hat{c}_y = \frac{1}{5}\sum_{i=1}^{5} c_y^{(i)}, \quad
+  \hat{z}_{\text{top}} = \frac{1}{5}\sum_{i=1}^{5} z_{\text{top}}^{(i)}
+\end{equation}
+
+The standard deviation across the 5 samples is logged as a quality metric.
+Typical values for a stationary object are $\sigma_{c_x} < 3$ mm, indicating
+stable pose estimation.
+
+\section{MoveIt Planning Scene}
+
+Before planning arm motion, two collision objects are added to the MoveIt planning scene:
+
+\textbf{Table:} A flat box of dimensions $0.8 \times 1.2 \times 0.02$ m, centred at
+the estimated table surface position.
+This prevents the arm from planning through the table surface.
+
+\textbf{Object:} A vertical cylinder with the estimated radius plus a 1 cm safety
+margin and height $z_{\text{top}} - z_{\text{bottom}}$.
+This is added before the OMPL plan to the pre-grasp position so that the planner
+routes around the object.
+It is \emph{removed} before the descent phase because the gripper must intentionally
+enter the object's bounding volume to close around it.
+
+\begin{lstlisting}[language=Python, caption={Collision object lifecycle during grasp.}]
+# Before OMPL plan:
+self.add_table_collision(bx, z_table - 0.01)
+self.add_object_collision(cx, cy, z_bottom, z_top, radius)
+
+# OMPL plans around both → arm reaches above object
+self._send_arm_goal(cx, cy, z_top + 0.20)   # pre-grasp 20 cm above
+
+# Before descent:
+self.remove_collision_object("object")       # allow gripper to enter
+
+# Torso descends straight down → gripper at grasp height
+# Gripper closes → object grasped
+\end{lstlisting}
+
+\section{Arm Motion: OMPL + Torso Descent}
+
+\subsection{OMPL Plan to Pre-Grasp}
+
+The OMPL (Open Motion Planning Library) planner, accessed via the MoveIt
+\texttt{/move\_group} action server, plans a collision-free trajectory from the current
+arm configuration to a pre-grasp pose 20 cm directly above the estimated object centre.
+The goal is expressed as a Cartesian position constraint (5 cm sphere) on the
+\texttt{arm\_tool\_link} with a soft orientation constraint ($\pm 0.2$ rad tolerance)
+to maintain the grasp orientation.
+
+Key planning parameters:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Planning group & \texttt{arm\_torso} \\
+Planning attempts & 10 \\
+Allowed planning time & 10 s \\
+Replan attempts & 3 \\
+Max velocity scaling & 0.3 \\
+Max acceleration scaling & 0.2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Torso Descent — Vertical Approach}
+\label{sec:torso_descent}
+
+Once the arm is positioned at the pre-grasp height, the final 20 cm vertical
+approach is performed by lowering the torso lift joint rather than re-planning with
+MoveIt.
+
+This design choice is motivated by a key property of TIAGo's kinematic structure:
+the torso lift joint is a \textbf{prismatic joint with its axis aligned with world $Z$}.
+Lowering the torso therefore moves the entire arm assembly — and consequently the
+\texttt{arm\_tool\_link} — \emph{exactly vertically downward}, with no lateral deviation.
+This produces a straight-line end-effector path without requiring Cartesian path
+computation or IK solutions at each intermediate height.
+
+The torso is lowered using the \texttt{/torso\_controller/follow\_joint\_trajectory}
+action server with a trapezoidal velocity profile (single-point trajectory, 3 s duration):
+
+\begin{lstlisting}[language=Python, caption={Torso descent implementation.}]
+def _torso_descent(self, delta_z):
+    target = np.clip(self.current_torso_height - delta_z, 0.0, 0.35)
+    traj = JointTrajectory()
+    traj.joint_names = ['torso_lift_joint']
+    pt = JointTrajectoryPoint()
+    pt.positions    = [target]
+    pt.time_from_start = rospy.Duration(3.0)
+    traj.points.append(pt)
+    goal = FollowJointTrajectoryGoal()
+    goal.trajectory = traj
+    self.torso_client.send_goal(goal)
+    self.torso_client.wait_for_result(rospy.Duration(10))
+\end{lstlisting}
+
+The current torso height is tracked continuously from \texttt{/joint\_states} so
+the actual joint position is used rather than an assumed value.
+
+\subsection{Gripper Close and Object Lift}
+
+After the descent, \texttt{play\_motion('close')} closes the gripper.
+The arm is then returned to a safe height by raising the torso back to 10 cm, lifting
+the object clear of the table before any further motion is planned.
+
+\section{Grasp Offsets and Calibration}
+
+The relationship between the cylinder centre $(c_x, c_y, z_{\text{top}})$ estimated
+from depth and the actual target position of \texttt{arm\_tool\_link} for a successful
+grasp is determined by calibrated offsets $(\Delta x, \Delta y, \Delta z)$:
+
+\begin{equation}
+  \mathbf{p}_{\text{grasp}} =
+  \begin{pmatrix} c_x + \Delta x \\ c_y + \Delta y \\ z_{\text{top}} + \Delta z \end{pmatrix}
+\end{equation}
+
+These offsets account for the physical offset between the \texttt{arm\_tool\_link}
+origin and the gripper jaw centre, and are calibrated using
+\texttt{calibrate\_grasp\_interactive.py} — an interactive tool that lets the user
+adjust offsets while the robot holds a known position, then saves them to
+\texttt{grasp\_offsets.yaml}.
+Default values ($\Delta x = 0.16$, $\Delta y = -0.04$, $\Delta z = -0.04$ m) are used
+if no calibration file exists.
+Environment variables \texttt{GRASP\_DX}, \texttt{GRASP\_DY}, \texttt{GRASP\_DZ}
+allow runtime override without editing files.
+
+\section{Grasp Orientation}
+
+The gripper orientation throughout the grasp is fixed at:
+
+\begin{equation}
+  \mathbf{q}_{\text{grasp}} = (x=0.703,\; y=0.073,\; z=-0.034,\; w=0.706)
+\end{equation}
+
+which corresponds to a \textbf{top-down approach} with the gripper fingers aligned
+with the robot's forward direction.
+This orientation is maintained as a soft constraint ($\pm 0.2$ rad tolerance on all
+axes) during OMPL planning and held fixed during the torso descent.
+A top-down approach is used because it generalises to any object placed on a flat
+surface — the fingers straddle the object regardless of its shape.
+
+\section{Head Control During Grasping}
+
+During the grasping pipeline, the head is tilted downward to $-0.5$ rad (looking at
+the table) to keep the object within the camera field of view.
+The current pan angle is preserved by reading \texttt{head\_1\_joint} from
+\texttt{/joint\_states} before sending the trajectory command:
+
+\begin{lstlisting}[language=Python, caption={Head tilt with pan preservation.}]
+def _tilt_head(self, tilt=-0.5, duration=2.0):
+    js = rospy.wait_for_message('/joint_states', JointState, timeout=2.0)
+    pan = js.position[js.name.index('head_1_joint')] \
+          if 'head_1_joint' in js.name else 0.0
+    # send trajectory with [pan, tilt] — pan unchanged, only tilt set
+\end{lstlisting}
+
+This ensures the head does not snap back to the left-right centre when only the
+tilt needs to change — important when the object was found to one side by
+\texttt{search\_with\_head}.
+
+\section{Planned Improvement: Industrial-Style Trajectory (v6)}
+\label{sec:v6_plan}
+
+The torso descent approach (Section~\ref{sec:torso_descent}), while effective, has
+two drawbacks:
+\begin{itemize}[noitemsep]
+  \item It is \textbf{slow}: lowering 20 cm at a safe speed takes approximately 3--4 s.
+  \item The path is \textbf{kinematically coupled}: while the torso translates the arm
+        endpoint vertically, the arm joints are locked, which can lead to subtle
+        orientation drift if the arm is not perfectly positioned.
+\end{itemize}
+
+The planned v6 implementation adopts an industrial-style \textbf{MoveJ / MoveL} model:
+
+\begin{description}[noitemsep]
+  \item[\texttt{MoveJ}] Joint-space interpolation with a trapezoidal velocity profile
+        for large repositioning moves (home $\rightarrow$ pre-grasp, lifted
+        $\rightarrow$ home). The planner is free to choose the joint-space path.
+  \item[\texttt{MoveL}] Cartesian straight-line motion for the precision approach and
+        retreat, with a \textbf{Linear Segment with Parabolic Blends (LSPB)} velocity
+        profile ensuring smooth acceleration and deceleration.
+\end{description}
+
+The LSPB profile for a segment of length $d$ with peak velocity $v_{\max}$ and
+acceleration $a$:
+
+\begin{equation}
+  t_{\text{blend}} = \frac{v_{\max}}{a}, \quad
+  t_{\text{total}} = \frac{d}{v_{\max}} + \frac{v_{\max}}{a}
+\end{equation}
+
+\[
+  v(t) =
+  \begin{cases}
+    a \cdot t & 0 \leq t \leq t_{\text{blend}} \\
+    v_{\max}  & t_{\text{blend}} < t \leq t_{\text{total}} - t_{\text{blend}} \\
+    v_{\max} - a(t - (t_{\text{total}} - t_{\text{blend}})) & \text{otherwise}
+  \end{cases}
+\]
+
+At via-points between two \texttt{MoveL} segments (e.g.\ the transition from vertical
+descent to horizontal retreat), a \textbf{blending zone} is applied: the robot begins
+transitioning to the next segment direction before reaching the exact via-point,
+carving a smooth rounded corner rather than coming to a full stop.
+This reduces cycle time and eliminates the velocity discontinuity at segment
+boundaries.
+
+The resulting v6 grasp motion sequence is:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Phase} & \textbf{Motion type} & \textbf{Speed} \\
+\midrule
+Home $\rightarrow$ pre-grasp  & MoveJ & 30\% of max \\
+Pre-grasp $\rightarrow$ grasp & MoveL (straight down) & 3 cm/s \\
+Gripper close                 & — & — \\
+Grasp $\rightarrow$ lifted    & MoveL (straight up) & 5 cm/s \\
+Lifted $\rightarrow$ retreat  & MoveL (blended with lift) & 8 cm/s \\
+Retreat $\rightarrow$ home    & MoveJ & 30\% of max \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Since the motion is fully described by Cartesian poses, it is completely
+\textbf{object-agnostic}: only the target $(c_x, c_y, z_{\text{top}})$ from the
+perception pipeline changes between objects.
+Orientation is held fixed throughout all \texttt{MoveL} phases at
+$\mathbf{q}_{\text{grasp}}$ (no SLERP needed for a fixed top-down grasp).
+
+\section{Summary}
+
+Table~\ref{tab:grasp_summary} summarises the design decisions in the final v5
+grasping pipeline.
+
+\begin{table}[H]
+\centering
+\caption{Summary of key design decisions in the v5 grasping pipeline.}
+\label{tab:grasp_summary}
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{Sub-problem} & \textbf{Solution} & \textbf{Rationale} \\
+\midrule
+Object detection & YOLO11n via HTTP service & Python 3.6 in Docker cannot run Ultralytics directly \\
+3-D localisation & RANSAC cylinder fit on depth cloud & More accurate than bounding-box centroid for cylindrical objects \\
+Pose stability   & 5-frame average & Reduces sensor noise; $\sigma < 3$ mm typical \\
+Table height     & Depth strip below YOLO box & Direct measurement, more accurate than inference \\
+Collision scene  & Table box + object cylinder & Prevents arm from colliding with surface \\
+Approach path    & OMPL (free) + torso descent (vertical) & Avoids Cartesian singularities at low wrist heights \\
+Descent path     & Torso prismatic joint & Guaranteed straight vertical line, no IK required \\
+Orientation      & Fixed top-down quaternion & Generalises to any flat-surface object \\
+Offsets          & Calibrated YAML + env var override & Accounts for tool-link to jaw-centre offset \\
+\bottomrule
+\end{tabularx}
+\end{table}

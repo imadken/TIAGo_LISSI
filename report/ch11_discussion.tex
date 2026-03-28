@@ -1,0 +1,156 @@
+% ============================================================
+%  CHAPTER 11 — Discussion
+% ============================================================
+\chapter{Discussion}
+\label{ch:discussion}
+
+\section{Key Findings}
+
+\subsection{VLM-Based Task Decomposition}
+
+The use of Gemini 2.0 Flash as the reasoning engine proved effective for multi-step
+task decomposition.
+In successful trials, the VLM consistently selected the appropriate skill sequence
+without explicit programming of the skill ordering.
+The structured JSON output format, with the system prompt constraint
+\textit{``Respond ONLY with valid JSON''}, reduced parse failures to below \todo{X}\%
+of queries, with the retry logic handling the remainder.
+
+The affordance feedback loop — where skill failures are communicated back to the
+VLM as context — was essential for robustness.
+Without it, the VLM would repeatedly select an infeasible skill; with it, the agent
+dynamically adapts, for example switching from \texttt{grab\_bottle} to
+\texttt{search\_with\_head} when the object is not visible.
+
+\subsection{3-D Localisation Accuracy}
+
+The RANSAC cylinder fitting approach provided stable object localisation with typical
+standard deviations below 3 mm across 5 frames.
+This accuracy was sufficient for the gripper to close around the bottle reliably,
+given the calibrated grasp offsets.
+The main failure mode was insufficient depth data — thin objects (\eg a narrow bottle
+at the edge of the YOLO bounding box) produced fewer than 15 valid depth points,
+causing the cylinder fit to be rejected.
+
+\subsection{Torso Descent vs.\ Cartesian Approach}
+
+The torso descent strategy was an unconventional but effective solution to the wrist
+singularity problem that caused MoveIt Cartesian path failures at low gripper heights.
+By using the prismatic torso joint (world-Z aligned) for the final vertical approach,
+the system guaranteed a straight-line end-effector path without requiring IK solutions
+at each intermediate height.
+
+The main drawback is speed: the torso descends at 3 cm/s for safety, making the
+approach phase 3--4 seconds regardless of the required travel distance.
+The planned MoveJ/MoveL trajectory approach (Chapter~\ref{ch:manipulation}) would
+reduce this to 1--2 seconds while providing a more professional motion profile.
+
+\subsection{Split-Process Architecture}
+
+The HTTP microservice architecture for YOLO inference demonstrated that it is possible
+to overcome severe deployment constraints (Python 3.6, no GPU) while maintaining
+real-time performance.
+The 18 ms YOLO11n inference time on the host CPU, combined with HTTP overhead, resulted
+in an effective detection rate of \todo{X} Hz, which was adequate for the agent's
+non-real-time control loop.
+
+The main risk of this architecture is the dependency on a stable network connection
+between the container and the host, and the need to start two separate processes.
+The fallback to local YOLOv4-tiny mitigates service unavailability.
+
+\section{Limitations}
+
+\subsection{No Object Permanence}
+
+Objects are tracked only within the current camera frame.
+If the bottle is moved out of view during a grasp attempt (for example, by being
+knocked), the system has no memory of its last known location.
+The next perception step would find no bottle, and the VLM would select
+\texttt{search\_with\_head}, which may or may not relocate it depending on where
+it fell.
+
+\subsection{Fixed Grasp Orientation}
+
+The grasp orientation quaternion is fixed throughout the pipeline.
+This works well for upright cylindrical objects on flat surfaces but would fail for:
+\begin{itemize}[noitemsep]
+  \item Objects lying on their side.
+  \item Objects oriented at an angle to the robot's forward direction.
+  \item Non-cylindrical objects requiring a different approach angle.
+\end{itemize}
+
+Adapting the grasp orientation to the detected object pose (using either
+learning-based pose estimation or RANSAC-based axis detection) is an important
+future direction.
+
+\subsection{Internet Dependency}
+
+The VLM reasoning requires internet access for the Gemini API.
+Network interruptions degrade reasoning quality (fallback to \texttt{go\_home}) and
+latency spikes (up to 1.5 s) slow the control loop.
+A locally deployed VLM (LLaVA, VILA) would eliminate this dependency at the cost
+of requiring a GPU.
+
+\subsection{Python 3.6 Constraint}
+
+The Docker container's Python 3.6 requirement prevented the use of several beneficial
+libraries:
+\begin{itemize}[noitemsep]
+  \item \texttt{moveit\_commander} (Python 2.7 or 3.8+ only in the PAL stack).
+  \item Modern type annotations (\texttt{x: int | None}).
+  \item \texttt{dataclasses} (Python 3.7+).
+\end{itemize}
+
+The workarounds (raw MoveGroupAction client, manual type checking, dictionary-based
+state) add code complexity.
+
+\subsection{Single-Object Grasping}
+
+The system can only grasp one object per task cycle.
+Multi-object grasping (carrying a tray, for example) would require significant
+extensions to the perception, planning, and skill layers.
+
+\section{Comparison with Related Work}
+
+\begin{table}[H]
+\centering
+\caption{Comparison with related VLA robot systems.}
+\label{tab:related_comparison}
+\begin{tabularx}{\linewidth}{lXXX}
+\toprule
+\textbf{System} & \textbf{VLM/LLM} & \textbf{Skills} & \textbf{Grasp approach} \\
+\midrule
+SayCan \cite{ahn2022saycan} & PaLM + value fn & 551 skills & Learned policy \\
+RT-2 \cite{brohan2023rt2}   & PaLM-E (fine-tuned) & End-to-end & Learned trajectory \\
+This work                    & Gemini 2.0 Flash (zero-shot) & 9 skills & Classical RANSAC + MoveIt \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Unlike SayCan and RT-2, this work requires no robot-specific training data and can be
+deployed on a new platform with only calibration of the grasp offsets.
+The trade-off is reduced generalisation: the skills are hand-crafted for specific
+manipulation primitives rather than learned from demonstrations.
+
+\section{Lessons Learned}
+
+\begin{enumerate}
+  \item \textbf{Iterative development is essential.} The grasp pipeline required 5
+        iterations to achieve reliable performance. Each version addressed a specific
+        failure mode identified through real-robot testing.
+
+  \item \textbf{Sensor noise must be actively managed.} Single-frame detection is
+        too noisy for reliable 3-D localisation; 5-frame averaging reduced grasp
+        failures significantly.
+
+  \item \textbf{Structured prompts are critical.} Early prompt designs without strict
+        JSON formatting constraints produced unparseable outputs frequently. The current
+        design reduces failures to below \todo{X}\%.
+
+  \item \textbf{Safety should be designed in from the start.} The affordance gating
+        system prevented several potentially damaging arm movements during development.
+
+  \item \textbf{Architecture constraints drive design.} The Python 3.6 constraint
+        led to the HTTP microservice design, which turned out to be a clean separation
+        of concerns that would be useful even without the constraint.
+\end{enumerate}

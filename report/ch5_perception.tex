@@ -1,0 +1,281 @@
+% ============================================================
+%  CHAPTER 5 — Perception System
+% ============================================================
+\chapter{Perception System}
+\label{ch:perception}
+
+\section{Overview}
+
+The perception system is responsible for providing the agent with an understanding
+of the visual environment.
+It has two modes of operation: a \textbf{detection mode} that runs YOLO on demand
+when the agent is processing a command, and a \textbf{streaming mode} used by the
+live visualiser to annotate the camera feed continuously.
+
+The main component is \texttt{PerceptionManager} (v2), which abstracts:
+\begin{itemize}[noitemsep]
+  \item RGB image acquisition from the ROS camera topic.
+  \item Object detection via the YOLO11n HTTP microservice.
+  \item A local YOLOv4-tiny fallback if the service is unreachable.
+  \item Detection visualisation (bounding boxes, labels, confidence scores).
+\end{itemize}
+
+\section{RGB-D Image Pipeline}
+
+\subsection{Synchronised Acquisition}
+
+RGB and depth images are acquired as time-synchronised pairs using
+\texttt{message\_fil\-ters.\-Approx\-imate\-Time\-Syn\-chron\-izer} with a 100\,ms time tolerance:
+
+\begin{lstlisting}[language=Python, caption={RGB-D synchronisation setup.}]
+rgb_sub   = message_filters.Subscriber('/xtion/rgb/image_raw', Image)
+depth_sub = message_filters.Subscriber('/xtion/depth_registered/image_raw', Image)
+self.ts   = message_filters.ApproximateTimeSynchronizer(
+    [rgb_sub, depth_sub], queue_size=5, slop=0.1)
+self.ts.registerCallback(self._sync_callback)
+\end{lstlisting}
+
+This guarantees that the RGB and depth images used together for 3-D localisation
+correspond to the same physical moment, eliminating stereo artefacts caused by
+robot motion between frames.
+
+\subsection{Depth Decoding}
+
+The Xtion delivers depth in two possible encodings.
+The callback handles both:
+
+\begin{lstlisting}[language=Python, caption={Depth image decoding.}]
+if depth_msg.encoding == '32FC1':
+    arr = np.frombuffer(depth_msg.data, dtype=np.float32)
+elif depth_msg.encoding == '16UC1':
+    arr = np.frombuffer(depth_msg.data, dtype=np.uint16) \
+          .astype(np.float32) / 1000.0  # mm -> m
+self.latest_depth = arr.reshape(depth_msg.height, depth_msg.width)
+\end{lstlisting}
+
+Valid depth range is $[0.15, 3.5]$ m; values outside this range are set to NaN.
+
+\section{YOLO Model Selection}
+
+\subsection{Evolution of Models Used}
+
+Four YOLO variants were evaluated during development.
+Table~\ref{tab:yolo_eval} summarises the key metrics.
+
+\begin{table}[H]
+\centering
+\caption{YOLO model evaluation on the deployment platform.}
+\label{tab:yolo_eval}
+\small
+\begin{tabular}{llllll}
+\toprule
+\textbf{Model} & \textbf{Deployment} & \textbf{Infer.} & \textbf{Classes} & \textbf{Seg.} & \textbf{Decision} \\
+\midrule
+YOLOv4-tiny   & Docker (cv2.dnn)   & $\sim$50 ms  & 80 (fixed) & No  & Early v. \\
+YOLO-World    & Host (Py 3.10)     & $\sim$150 ms & Open vocab & No  & Too slow \\
+YOLOE-26s-seg & Host (Py 3.10)     & $\sim$300 ms & Open vocab & Yes & Too slow \\
+YOLO11n       & Host microservice  & $\sim$18 ms  & 80 (COCO)  & No  & \textbf{Chosen} \\
+\bottomrule
+\end{tabular}
+\normalsize
+\end{table}
+
+\subsection{YOLO11n}
+
+YOLO11n is the nano variant of the Ultralytics YOLO11 architecture.
+Key properties relevant to this deployment:
+
+\begin{itemize}[noitemsep]
+  \item Trained on MS-COCO 80 classes, covering all objects relevant to the scenario
+        (\texttt{bottle}, \texttt{person}, \texttt{cup}, \texttt{chair}, \textit{etc.}).
+  \item Single-stage detector: one forward pass for the full image.
+  \item CPU inference at $\approx$18 ms per frame → theoretical 55 fps
+        (limited in practice by the HTTP overhead to $\approx$15 fps).
+  \item Weights size: $\approx$5.4 MB.
+  \item Confidence threshold: 0.4 (empirically tuned to avoid false positives
+        while not missing partially occluded objects).
+\end{itemize}
+
+\subsection{Why Not Open-Vocabulary Models?}
+
+YOLO-World and YOLOE-26s-seg were attractive because they can detect \emph{any}
+object described by a text prompt, rather than being limited to COCO classes.
+However:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{YOLO-World}: $\sim$150 ms CPU inference, acceptable for periodic
+        detection but inadequate for the live 15 fps stream required by the visualiser.
+  \item \textbf{YOLOE-26s-seg}: $\sim$300 ms CPU inference; additionally requires
+        downloading the 242 MB mobileclip2\_b.ts CLIP model at startup, adding
+        30--60 seconds of initialisation time.
+\end{itemize}
+
+For a future deployment with GPU access, open-vocabulary models would reduce inference
+to $<$10 ms and would be the preferred choice.
+
+\section{YOLO HTTP Microservice}
+
+\subsection{Architecture}
+
+Because the Docker container runs Python 3.6, which cannot use Ultralytics,
+YOLO11n is deployed on the host machine as a standalone HTTP server
+(\texttt{yolo\_service.py}):
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm and 2.5cm]
+  \node[box, minimum width=3.5cm] (docker) {Docker Container\\PerceptionManager v2\\(Python 3.6)};
+  \node[box, minimum width=3.5cm, right=3cm of docker] (host) {Host Machine\\YOLO11n Service\\(Python 3.10, port 5001)};
+
+  \draw[arr, bend left=20] (docker.north east)
+    to node[above, font=\small, align=center]{POST /detect\\JPEG bytes + X-Classes header} (host.north west);
+  \draw[arr, bend left=20] (host.south west)
+    to node[below, font=\small]{JSON detections} (docker.south east);
+\end{tikzpicture}
+\caption{YOLO HTTP microservice communication.}
+\label{fig:yolo_service}
+\end{figure}
+
+\subsection{API}
+
+\begin{table}[H]
+\centering
+\caption{YOLO service API endpoints.}
+\label{tab:yolo_api}
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{Method} & \textbf{Endpoint} & \textbf{Description} \\
+\midrule
+POST & \texttt{/detect} & Body: raw JPEG bytes. Optional header \texttt{X-Classes}: comma-separated class filter. Returns JSON detections. \\
+GET  & \texttt{/health} & Returns model name, inference capability status. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The \texttt{X-Classes} header allows the caller to filter detections server-side,
+reducing the JSON payload for targeted detection:
+
+\begin{lstlisting}[language=Python, caption={Class-filtered detection request.}]
+resp = requests.post(
+    'http://localhost:5001/detect',
+    data=jpeg_bytes,
+    headers={
+        'Content-Type': 'image/jpeg',
+        'X-Classes': 'bottle'      # only return bottle detections
+    },
+    timeout=3.0
+)
+\end{lstlisting}
+
+\subsection{Threaded Server}
+
+The HTTP server uses \texttt{socketserver.ThreadingMixIn} so that MJPEG stream
+connections and \texttt{/detect} requests are served concurrently without blocking:
+
+\begin{lstlisting}[language=Python, caption={Threaded HTTP server.}]
+class _ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+\end{lstlisting}
+
+Without threading, a long-running \texttt{/detect} call would block the
+\texttt{/health} endpoint, causing false negatives in service health checks.
+
+\subsection{Detection Response Format}
+
+\begin{lstlisting}[language=JSON, caption={YOLO service JSON response.}]
+{
+  "detections": [
+    {
+      "class_name": "bottle",
+      "confidence": 0.8712,
+      "bbox": [142, 201, 85, 178]
+    }
+  ],
+  "model": "yolo11n",
+  "inference_ms": 18,
+  "segmentation": false
+}
+\end{lstlisting}
+
+Bounding boxes are in $[x, y, w, h]$ pixel format where $(x,y)$ is the top-left corner.
+
+\section{Live Visualiser}
+
+\subsection{Web Dashboard (port 8080)}
+
+\texttt{web\_visualiser.py} serves an MJPEG stream and JSON status endpoint at port 8080,
+accessible from any browser on the network.
+It subscribes to two ROS topics:
+
+\begin{itemize}[noitemsep]
+  \item \texttt{/xtion/rgb/image\_raw} — for continuous raw camera feed (always active).
+  \item \texttt{/agent/camera\_annotated} — annotated frames published by the agent
+        during active processing (overrides raw feed).
+\end{itemize}
+
+A key fix was adding \texttt{socketserver.ThreadingMixIn} to allow concurrent
+connections: a single-threaded server caused the \texttt{/status} poll (every 500 ms)
+to block behind the MJPEG stream, freezing the dashboard.
+
+\subsection{Live YOLO Detector (port 8081)}
+
+\texttt{live\_detector.py} provides a browser-accessible stream at port 8081 showing
+real-time YOLO detections overlaid on the camera feed.
+A \textbf{decoupled two-thread design} prevents slow detection from degrading stream
+smoothness:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm and 2.0cm]
+  \node[box, minimum width=4cm] (cam)  {Camera Thread\\15 fps from /xtion};
+  \node[box, minimum width=4cm, right=2cm of cam] (det) {Detection Thread\\calls YOLO service};
+  \node[box, minimum width=4cm, below=1cm of cam] (stream){MJPEG Stream\\15 fps (browser)};
+  \node[box, minimum width=4cm, below=1cm of det] (dets){Last known\\detections};
+
+  \draw[arr] (cam.south) -- node[left, font=\small]{draws boxes} (stream.north);
+  \draw[arr] (det.south) -- (dets.north);
+  \draw[arr] (dets.west) -- node[below, font=\small]{shared state} (stream.east);
+  \draw[arr, dashed] (cam.east) -- node[above, font=\small]{latest JPEG} (det.west);
+\end{tikzpicture}
+\caption{Decoupled architecture of the live YOLO detector.}
+\label{fig:live_detector}
+\end{figure}
+
+The camera thread reads frames and overlays the \emph{most recently computed} detection
+boxes, regardless of when the detection ran.
+The detection thread calls the YOLO service as fast as possible (typically 8--15 Hz
+for YOLO11n) and updates the shared detection list.
+This ensures the stream stays at 15 fps even when detection takes 100+ ms.
+
+\section{Local Fallback: YOLOv4-tiny}
+
+If the YOLO service at \texttt{http://localhost:5001} is unreachable at startup,
+\texttt{Perception\-Manager} falls back to a local YOLOv4-tiny model loaded via
+\texttt{cv2.dnn.\-read\-Net\-From\-Darknet()}.
+This requires the weights and configuration files to be present in the workspace
+directory.
+The fallback is slower and less accurate than YOLO11n but ensures the system can
+still operate in degraded mode without network connectivity to the host.
+
+\section{PerceptionManager Interface}
+
+The public interface of \texttt{PerceptionManager} used by the agent and skills:
+
+\begin{lstlisting}[language=Python, caption={PerceptionManager public API.}]
+class PerceptionManager:
+    def get_latest_rgb(self) -> np.ndarray:
+        """Return latest BGR image from camera."""
+
+    def run_yolo(self, image, target_classes=None) -> List[Dict]:
+        """Run YOLO detection. Returns list of detections:
+        [{'class_name': str, 'confidence': float, 'bbox': [x,y,w,h]}, ...]"""
+
+    def detect_objects(self, target_classes=None) -> List[Dict]:
+        """Capture a fresh image and run YOLO."""
+
+    def draw_detections(self, image, detections) -> np.ndarray:
+        """Draw bounding boxes and labels on image copy."""
+\end{lstlisting}
+
+The \texttt{target\_classes} parameter is forwarded as the \texttt{X-Classes} header
+to the YOLO service, enabling server-side filtering without changing the detection model.

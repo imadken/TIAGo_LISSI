@@ -1,0 +1,53 @@
+digraph ontology {
+    graph [
+        fontname="Helvetica",
+        fontsize=11,
+        bgcolor="white",
+        pad=0.4,
+        nodesep=0.7,
+        ranksep=0.8,
+        splines=curved
+    ]
+    node [fontname="Helvetica", fontsize=10, penwidth=1.5]
+    edge [fontname="Helvetica", fontsize=9, penwidth=1.3]
+
+    /* ── Class nodes (ellipses) ──────────────────────── */
+    Robot   [shape=ellipse, label="Robot\nState", fillcolor="#DBEAFE", style="filled", color="#2563EB"]
+    ObjMem  [shape=ellipse, label="ObjectMemory\n[class c]",  fillcolor="#DCFCE7", style="filled", color="#16A34A"]
+    SceneG  [shape=ellipse, label="SceneGraph",  fillcolor="#EDE9FE", style="filled", color="#7C3AED"]
+    SpatRel [shape=ellipse, label="SpatialRelation", fillcolor="#FEF3C7", style="filled", color="#D97706"]
+    TaskH   [shape=ellipse, label="TaskHistory", fillcolor="#FFE4E6", style="filled", color="#E11D48"]
+    LocLbl  [shape=ellipse, label="LocationLabel", fillcolor="#D1FAE5", style="filled", color="#059669"]
+
+    /* ── Instance / data nodes (boxes) ──────────────── */
+    gripper [shape=box, label="gripper\nempty | holding:c", fillcolor="#F0F9FF", style="filled,rounded", color="#0369A1", fontsize=9]
+    locn    [shape=box, label="base_location\ntable|shelf|home|…", fillcolor="#F0F9FF", style="filled,rounded", color="#0369A1", fontsize=9]
+    bbox    [shape=box, label="bbox\n[x,y,w,h] px", fillcolor="#F0FDF4", style="filled,rounded", color="#16A34A", fontsize=9]
+    pos3d   [shape=box, label="position_3d\n(X,Y,Z) m", fillcolor="#F0FDF4", style="filled,rounded", color="#16A34A", fontsize=9]
+    tseen   [shape=box, label="t_last_seen\nt_first_seen", fillcolor="#F0FDF4", style="filled,rounded", color="#16A34A", fontsize=9]
+    relbox  [shape=box, label="left_of | right_of\nabove | near | on_table", fillcolor="#FFFBEB", style="filled,rounded", color="#D97706", fontsize=9]
+    skills  [shape=box, label="[skill_name, …]", fillcolor="#FFF1F2", style="filled,rounded", color="#E11D48", fontsize=9]
+
+    /* ── Class relations ─────────────────────────────── */
+    Robot   -> ObjMem  [label="detects",    color="#16A34A", style=bold]
+    Robot   -> TaskH   [label="executed",   color="#E11D48"]
+    Robot   -> LocLbl  [label="locatedAt",  color="#059669"]
+    ObjMem  -> SceneG  [label="hasRelation",color="#7C3AED", style=bold]
+    SceneG  -> SpatRel [label="instanceOf", color="#D97706"]
+    TaskH   -> ObjMem  [label="involves",   color="#16A34A", style=dashed]
+    SpatRel -> ObjMem  [label="between",    color="#7C3AED", style=dashed, dir=both]
+
+    /* ── Data relations ──────────────────────────────── */
+    Robot   -> gripper [label="hasSlot",  color="#0369A1", style=dashed]
+    Robot   -> locn    [label="hasSlot",  color="#0369A1", style=dashed]
+    ObjMem  -> bbox    [label="hasBBox",  color="#16A34A", style=dashed]
+    ObjMem  -> pos3d   [label="has3D",    color="#16A34A", style=dashed]
+    ObjMem  -> tseen   [label="hasMeta",  color="#16A34A", style=dashed]
+    SpatRel -> relbox  [label="type",     color="#D97706", style=dashed]
+    TaskH   -> skills  [label="entries",  color="#E11D48", style=dashed]
+
+    /* ── Layout hints ────────────────────────────────── */
+    { rank=same; Robot; ObjMem }
+    { rank=same; SceneG; SpatRel }
+    { rank=same; TaskH; LocLbl }
+}

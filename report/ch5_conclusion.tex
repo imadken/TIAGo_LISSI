@@ -1,0 +1,320 @@
+% ============================================================
+%  CHAPTER 5 — Discussion, Conclusions, and Future Work
+% ============================================================
+\chapter{Discussion, Conclusions, and Future Work}
+\label{ch:conclusion}
+
+This final chapter reflects on what was built, what was learned, and where the work
+can go from here.
+We begin by discussing the main design decisions and findings in the light of the
+experimental results, then situate the work within the broader literature, and close
+with conclusions and a road-map for future development.
+
+% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+% ============================================================
+
+\subsection{VLM-Driven Task Decomposition in Practice}
+
+The central architectural bet of this project was that a zero-shot cloud VLM could
+replace hand-crafted finite state machines as the decision engine for a physical robot.
+The experimental results support this bet.
+In successful trials Gemini 2.0 Flash consistently selected the correct skill sequence
+without any robot-specific fine-tuning: it understood that you cannot hand over an
+object you have not yet grasped, that you should search before grasping an invisible
+object, and that the task is finished once the gripper opens toward the user.
+
+The structured JSON output format --- enforced by the system prompt with the constraint
+\emph{``Respond ONLY with valid JSON, no markdown, no prose''} --- was essential.
+Early iterations without this constraint produced free-text replies that required
+fragile regex parsing and failed roughly 20\% of the time.
+The current design reduces parse failures to negligible levels, with the retry logic
+handling any edge cases.
+
+Crucially, the affordance feedback loop proved to be what transformed the VLM from a
+brittle oracle into a robust planner.
+Without it, a single VLM error --- say, selecting \texttt{grab\_bottle} when the gripper
+is already closed --- would leave the agent stuck in an infinite retry loop.
+With it, the failure message is injected into the next prompt, and the model corrects
+itself, typically within one additional iteration.
+This closed-loop self-correction is one of the most practically valuable design patterns
+to emerge from the project.
+
+\subsection{3-D Localisation: Where Noise Matters Most}
+
+The RANSAC cylinder fitting pipeline achieved sub-5\,mm positional stability on stationary
+objects, which turned out to be more than accurate enough for the gripper to close around
+a 500\,ml bottle.
+The 5-frame averaging reduced the dominant noise source (single-frame depth jitter from
+the Xtion sensor's structured-light pattern) to an acceptable level.
+
+The main residual failure mode was \emph{insufficient depth coverage}: thin objects or
+bottles at the far edge of the detection bounding box sometimes produced fewer than 15
+valid depth points, causing the RANSAC fitting to be rejected and the grasp attempt to
+abort.
+This suggests that the confidence threshold for RANSAC acceptance (currently a minimum
+inlier count) should be adaptive rather than fixed.
+
+\subsection{The Torso Descent: Unconventional but Effective}
+
+The torso-descent vertical approach --- using the prismatic torso joint for the final
+approach instead of a Cartesian arm path --- was arguably the most unusual engineering
+decision in the project, and the one that made the difference between a system that
+worked occasionally and one that worked reliably.
+
+The key insight is geometric: the TIAGo torso is a pure world-Z-aligned prismatic joint.
+Lowering it while the arm is extended above the object guarantees a straight vertical
+descent with no IK computation, no singularity risk, and no lateral deviation.
+MoveIt is used only for the higher-level joint-space move to position the gripper above
+the object; the final centimetre-precision descent is purely kinematic.
+
+The main cost is speed: the torso descends at 3\,cm/s for safety, making the approach
+phase 3--4 seconds regardless of the required travel distance.
+For a demonstration scenario this is acceptable; for a productive robot in a time-critical
+environment it would not be.
+The planned v6 implementation (see Section~\ref{sec:future_work}) will address this with
+a full MoveJ/MoveL trajectory generator.
+
+\subsection{The Split-Process Architecture: Constraint as Opportunity}
+
+The split-process architecture --- YOLO running as an HTTP microservice on the host, the
+agent running in the Docker container --- was initially an unwanted consequence of the
+Python 3.6 constraint.
+In retrospect it turned out to be a clean design.
+
+The separation of concerns is genuine: the inference layer (YOLO model, GPU if available,
+Ultralytics API) is completely decoupled from the ROS control layer.
+Upgrading the detector requires only restarting the microservice; the agent code is
+untouched.
+The HTTP interface is also trivially testable: any developer can POST a JPEG to
+\texttt{localhost:5001/detect} and inspect the JSON response without launching ROS.
+The 18\,ms round-trip latency (including HTTP overhead) is negligible compared to the
+agent's 1--4\,s VLM query time.
+
+\subsection{Limitations and Honest Caveats}
+
+The system has several limitations that are important to state clearly.
+
+\paragraph{No object permanence.}
+Objects are tracked only within the current camera frame.
+If the bottle moves out of view during a grasp attempt, the system has no memory of its
+last known position and must restart with a \texttt{search\_with\_head} call.
+A scene graph updated across loop iterations would address this at modest implementation
+cost.
+
+\paragraph{Fixed grasp orientation.}
+The grasp orientation quaternion is fixed for downward vertical approach.
+This works for upright cylindrical objects on flat surfaces but fails for objects lying
+on their side or oriented at an angle.
+Extending the pipeline to estimate the object's principal axis from the RANSAC cylinder
+fit would generalise grasping to a much wider range of objects.
+
+\paragraph{Internet dependency.}
+All reasoning requires a live connection to the Gemini API.
+Network interruptions degrade the agent to a single fallback skill (\texttt{go\_to\_safe\_pose}).
+A locally deployed VLM would eliminate this dependency at the cost of requiring a
+GPU-equipped companion machine.
+
+\paragraph{COCO-80 class restriction.}
+YOLO11n detects only the 80 COCO classes.
+Requesting ``bring me the blue mug'' would fail if the mug is not close enough to
+``cup'' in class space.
+This restriction disappears when GPU resources permit the use of open-vocabulary detectors
+such as Grounding DINO~\cite{liu2023gdino}.
+
+\subsection{Comparison with Related Work}
+
+Table~\ref{tab:related_comparison} situates this work relative to the most prominent
+VLA systems in the literature.
+
+\begin{table}[H]
+\centering
+\caption{Comparison with related vision-language-action robot systems.}
+\label{tab:related_comparison}
+\begin{tabularx}{\linewidth}{lXXX}
+\toprule
+\textbf{System} & \textbf{VLM / LLM} & \textbf{Skills} & \textbf{Grasp approach} \\
+\midrule
+SayCan \cite{ahn2022saycan}   & PaLM + value fn  & 551 skills & Learned policy \\
+RT-2 \cite{brohan2023rt2}     & PaLM-E (fine-tuned) & End-to-end & Learned trajectory \\
+VILA \cite{lin2024vila}        & VILA VLM (fine-tuned) & End-to-end & Learned trajectory \\
+This work                      & Gemini 2.0 Flash (zero-shot) & 9 skills & RANSAC + MoveIt \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The critical difference is training data: SayCan collected 68,000 real-robot episodes;
+RT-2 fine-tuned a 55-billion-parameter model on a joint vision-language-action dataset;
+VILA required multi-stage training on curated embodied datasets.
+This work requires \emph{no robot-specific training data at all} --- only calibration
+of the grasp offsets, which takes roughly 30 minutes on a new platform.
+
+The trade-off is that the nine hand-crafted skills are less general than learned
+policies: the system cannot smoothly interpolate to novel objects or motion profiles.
+But for the narrow task domain targeted here (single-object pick-and-place + handover in
+a known environment), the zero-shot approach achieves comparable task success rates at
+a fraction of the development cost.
+
+\subsection{Lessons Learned}
+
+Five lessons stand out from the development process.
+
+\begin{enumerate}
+
+  \item \textbf{Iterative development on real hardware is non-negotiable.}
+        The grasp pipeline required five versions to reach reliable performance.
+        Each version was motivated by a specific failure mode identified on the physical
+        robot that no simulation would have caught: sensor noise patterns, gripper
+        mechanical play, MoveIt singularity regions near table height.
+
+  \item \textbf{Sensor noise must be actively managed.}
+        Single-frame RANSAC estimates are too noisy for sub-centimetre grasping.
+        Five-frame averaging reduced positioning errors from $\sim$15\,mm to $<$5\,mm
+        at negligible latency cost.
+
+  \item \textbf{Structured prompts are critical for reliable VLM integration.}
+        The difference between a reliable agent and an unreliable one was largely in the
+        system prompt: strict JSON schema, explicit behavioural rules, and affordance
+        failure injection.
+        Prompt engineering is as important as code engineering in VLM-based systems.
+
+  \item \textbf{Safety should be designed in from the start.}
+        The affordance gating system prevented several potentially damaging arm movements
+        during early development.
+        Bolting on safety after the fact is much harder and less reliable.
+
+  \item \textbf{Architectural constraints can drive good design.}
+        The Python 3.6 constraint led to the HTTP microservice architecture, which turned
+        out to be a clean separation of concerns that is beneficial regardless of the
+        constraint.
+        Constraints force creativity.
+
+\end{enumerate}
+
+% ============================================================
+\section{Conclusions}
+\label{sec:conclusions}
+% ============================================================
+
+This thesis presented the design, implementation, and evaluation of a complete
+Vision--Language--Action agent for the PAL Robotics \tiago{} mobile manipulator.
+The system accepts natural-language commands via voice or text, reasons about the scene
+using a cloud VLM, and executes physical manipulation skills --- all without any
+robot-specific training data.
+
+The six main contributions are:
+
+\begin{enumerate}
+
+  \item \textbf{A complete, deployable VLA agent} integrating Google Gemini 2.0 Flash,
+        YOLO11n object detection, and nine physical skills into a coherent
+        perceive--reason--act loop that runs within the constraints of a Python~3.6
+        / ROS~Melodic Docker environment.
+
+  \item \textbf{A robust 3-D object localisation pipeline} using RANSAC cylinder fitting
+        on RGB-D point clouds with 5-frame temporal averaging, achieving sub-5\,mm
+        positional stability for stationary objects.
+
+  \item \textbf{A split-process YOLO microservice} that overcomes the Python~3.6
+        deployment constraint by running YOLO11n on the host machine and communicating
+        via HTTP, achieving $\approx$18\,ms inference with a clean architectural separation
+        between the AI inference layer and the ROS control layer.
+
+  \item \textbf{An iterative grasping pipeline} that evolved through five versions, each
+        addressing a specific real-robot failure mode, culminating in the torso-descent
+        vertical approach that achieves reliable single-object grasps.
+
+  \item \textbf{A handover skill} that detects a person using YOLO and depth sensing,
+        plans a collision-free arm trajectory, and presents a held object at an ergonomic
+        height --- completing the full ``find--grasp--deliver'' task chain demonstrated in
+        the lab.
+
+  \item \textbf{A safety-first architecture} with per-skill affordance gating, consecutive
+        failure counting, and automatic safe-mode recovery to prevent robot damage during
+        failures.
+
+\end{enumerate}
+
+The results demonstrate that a zero-shot VLM-based agent can achieve reliable multi-step
+manipulation on a real mobile manipulator without robot-specific fine-tuning.
+The modular architecture --- where perception, reasoning, and execution are cleanly
+separated --- makes it straightforward to upgrade individual components independently.
+This work establishes a solid foundation for more capable embodied AI agents as better
+models, faster inference, and richer sensor suites become available.
+
+% ============================================================
+\section{Future Work}
+\label{sec:future_work}
+% ============================================================
+
+Several natural extensions would meaningfully increase the system's capabilities.
+
+\subsection{Industrial-Style Trajectory Generation (v6)}
+
+The torso-descent approach is effective but slow ($\sim$3--4\,s approach phase) and
+mechanically unusual.
+Version 6 of the grasping pipeline will replace it with a proper MoveJ/MoveL trajectory
+generator using Linear Segment with Parabolic Blends (LSPB) velocity profiles, providing
+smooth, time-optimal motions that generalise to any object type and produce more natural
+robot behaviour.
+
+\subsection{Navigation Integration}
+
+Navigation is implemented (Section~\ref{sec:architecture}) but not yet wired into the
+agent's skill library.
+Closing this gap requires:
+\begin{itemize}[noitemsep]
+  \item registering \texttt{NavigateToSkill} in the skill registry;
+  \item integrating a named-location manager (save / load / query positions);
+  \item adding multi-room tasks: ``find the bottle on the kitchen shelf''.
+\end{itemize}
+
+\subsection{Object Permanence and Semantic Memory}
+
+A scene graph updated across loop iterations would allow the agent to remember where
+objects were last seen and reason about persistence.
+This requires modest engineering: a Python dictionary mapping object labels to their
+last known 3-D positions in the base frame, updated at each successful detection.
+
+\subsection{Local VLM Deployment}
+
+Replacing the Gemini API with a locally deployed model (LLaVA~1.6, VILA, or InternVL)
+would eliminate the internet dependency and reduce latency.
+A GPU-equipped workstation connected via ROS would enable inference at $<$200\,ms per
+query.
+
+\subsection{Adaptive Grasp Orientation}
+
+Extending the grasping pipeline to estimate the object's principal axis from the RANSAC
+cylinder fit and adapt the approach orientation accordingly would enable grasping of
+non-cylindrical objects lying in arbitrary orientations --- significantly expanding the
+range of manipulation tasks the system can handle.
+
+\subsection{Open-Vocabulary Detection}
+
+When GPU resources are available, replacing YOLO11n with an open-vocabulary detector
+such as Grounding DINO~\cite{liu2023gdino} or YOLOE~\cite{wang2025yoloe} would remove
+the restriction to COCO-80 classes and enable fully open-ended task specifications:
+\emph{``bring me the red mug''} rather than \emph{``bring me the bottle''}.
+
+% ============================================================
+\section{Final Remarks}
+% ============================================================
+
+The demo that motivated this work --- a user saying \emph{``Hello TIAGo, I am thirsty,
+can you do something about that?''} and the robot searching, grasping a bottle, finding
+the user, and handing it over --- is a small but concrete step toward robots that are
+genuinely useful as everyday companions.
+
+What makes it noteworthy is not the individual components, each of which has been
+demonstrated in isolation many times before, but the \emph{integration}: a physical
+robot, in a real room, reasoning about what to do with a cloud brain, and executing it
+with classical robotic control.
+The gap between language understanding and physical action is closed --- not by
+end-to-end learning, but by a carefully engineered bridge between the two worlds.
+
+As VLMs become faster, cheaper, and more capable, the reasoning quality will improve
+for free.
+The architecture built here is designed to benefit directly from those improvements
+without requiring a redesign.

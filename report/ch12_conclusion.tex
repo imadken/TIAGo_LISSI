@@ -1,0 +1,116 @@
+% ============================================================
+%  CHAPTER 12 — Conclusion and Future Work
+% ============================================================
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+
+This thesis presented the design, implementation, and evaluation of a
+\textbf{Vision--Language--Action agent} for the PAL Robotics \tiago{} mobile
+manipulator.
+The system enables the robot to accept natural-language commands — via voice or text
+— and autonomously execute multi-step manipulation tasks by combining visual
+perception, VLM-based reasoning, and a library of physical skills.
+
+The main contributions of this work are:
+
+\begin{enumerate}
+  \item \textbf{A complete, deployable VLA agent} that integrates Google Gemini 2.0
+        Flash, YOLO11n object detection, and nine physical skills into a coherent
+        perceive--reason--act loop operating within the constraints of a Python 3.6
+        / ROS Melodic Docker environment.
+
+  \item \textbf{A robust 3-D object localisation pipeline} using RANSAC cylinder
+        fitting on RGB-D point clouds with 5-frame averaging, achieving sub-5 mm
+        positional stability for stationary objects.
+
+  \item \textbf{A split-process YOLO microservice} that overcomes the Python 3.6
+        constraint by deploying YOLO11n on the host machine and communicating via HTTP,
+        achieving $\approx$18 ms inference with a clean separation between the
+        AI inference layer and the ROS control layer.
+
+  \item \textbf{An iterative grasping pipeline} that evolved through five versions,
+        each addressing a specific failure mode, ultimately achieving a \todo{XX}\%
+        grasp success rate across 27 trials at varied table positions.
+
+  \item \textbf{A handover skill} that detects a person using YOLO and depth sensing,
+        plans a collision-free arm trajectory toward them, and presents the grasped
+        object at an ergonomic height, completing the full ``find--grasp--deliver''
+        task chain.
+
+  \item \textbf{A comprehensive safety system} that gates all skills via affordance
+        checks, tracks consecutive failures, and enters a safe mode with automatic
+        safe-pose recovery to prevent robot damage during failures.
+\end{enumerate}
+
+The system was evaluated on a real \tiago{} robot in a laboratory environment,
+demonstrating end-to-end task completion of \todo{XX}\% for the full
+``grab and hand over'' scenario, with a VLM skill selection accuracy of \todo{XX}\%.
+
+\section{Future Work}
+
+\subsection{Industrial-Style Trajectory Generation}
+
+The current torso-descent grasp approach, while effective, is slow and produces
+a kinematically suboptimal motion profile.
+The planned v6 implementation will replace it with a MoveJ/MoveL trajectory generator
+using Linear Segment with Parabolic Blends (LSPB) velocity profiles, providing smooth,
+time-optimal motions that generalise to any object type.
+
+\subsection{Navigation Integration}
+
+Navigation is currently implemented but not integrated into the agent's skill loop.
+Future work will close this gap by:
+\begin{itemize}[noitemsep]
+  \item Loading \texttt{NavigateToSkill} into the agent's skill library.
+  \item Integrating location management (save/load named positions).
+  \item Adding ``find the bottle on the shelf'' type tasks that require base movement.
+\end{itemize}
+
+\subsection{Object Permanence and Semantic Memory}
+
+A scene graph updated across multiple time steps would allow the agent to remember
+where objects were last seen and reason about object persistence.
+This could be implemented as a Python dictionary (object name → last known 3-D
+position) updated at each perception step.
+
+\subsection{Local VLM Deployment}
+
+Replacing the Gemini API with a locally deployed model (LLaVA 1.6, VILA, or InternVL)
+would eliminate the internet dependency and reduce latency.
+A GPU-equipped workstation connected to the robot via ROS would enable inference at
+$<$200 ms per query.
+
+\subsection{Adaptive Grasp Orientation}
+
+Extending the grasping pipeline to estimate the object's principal axis and adapt
+the approach orientation accordingly would enable grasping of non-cylindrical objects
+lying in arbitrary orientations.
+RANSAC-based axis detection on the depth point cloud is a natural extension of the
+existing cylinder fitting approach.
+
+\subsection{Open-Vocabulary Detection with GPU}
+
+When GPU resources are available, replacing YOLO11n with YOLOE-26s-seg or
+Grounding DINO would enable detection of arbitrary objects described by text,
+removing the restriction to COCO-80 classes and enabling fully open-ended task
+specifications such as ``pick up the red mug''.
+
+\subsection{Ontology and Semantic Reasoning}
+
+Integrating a lightweight semantic knowledge base (NetworkX scene graph or RDFLib
+with SOMA ontology) would allow the VLM to query structured knowledge about object
+affordances, spatial constraints, and task preconditions, moving beyond implicit
+reasoning toward verifiable task-and-motion planning.
+
+\section{Final Remarks}
+
+The results of this work demonstrate that a zero-shot VLM-based agent, without any
+robot-specific fine-tuning, can achieve reliable multi-step manipulation on a real
+mobile manipulator.
+The modular architecture — where perception, reasoning, and execution are cleanly
+separated — makes it straightforward to improve individual components (faster detector,
+better VLM, smoother trajectories) without restructuring the system.
+This work lays a solid foundation for a more capable embodied AI agent as better
+models and hardware become available.

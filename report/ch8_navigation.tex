@@ -1,0 +1,159 @@
+% ============================================================
+%  CHAPTER 8 — Navigation
+% ============================================================
+\chapter{Navigation}
+\label{ch:navigation}
+
+\section{Overview}
+
+Navigation provides the robot with the ability to move between named locations in
+its environment — for example, from a home position to the table where objects are
+placed, or to a person waiting to receive an object.
+The navigation subsystem is built on the ROS \texttt{move\_base} stack, which
+integrates global and local path planning, obstacle avoidance, and recovery behaviours.
+
+In the current deployment, navigation is implemented and tested but not yet integrated
+into the main VLA agent loop.
+The agent operates in a fixed position, relying on the arm's reach and head scanning
+to interact with objects.
+Navigation integration is identified as a key future improvement (Chapter~\ref{ch:conclusion}).
+
+\section{Navigation Stack}
+
+\subsection{ROS move\_base}
+
+The \texttt{move\_base} node implements a complete mobile base navigation solution:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Global planner}: computes an initial path from current pose to goal
+        using Dijkstra's algorithm on a static map.
+  \item \textbf{Local planner}: the Dynamic Window Approach (DWA) continuously adapts
+        the path in response to sensor data, enabling real-time obstacle avoidance.
+  \item \textbf{Costmaps}: inflation layers around obstacles discourage the robot from
+        passing too close to walls and furniture.
+  \item \textbf{Recovery behaviours}: if the robot becomes stuck, it executes a
+        sequence of escalating recovery actions — rotating in place, clearing the
+        costmap, and backing up.
+\end{itemize}
+
+Navigation goals are sent via the \path{/move_base} action server
+(\texttt{move\_base\_msgs/Move\-BaseAction}).
+
+\subsection{Navigation Client}
+
+The \texttt{NavigationClient} class (\texttt{navigation\_client.py}) wraps the
+\texttt{move\_base} action client with a named-location dictionary:
+
+\begin{lstlisting}[language=Python, caption={Navigation to a named location.}]
+NAMED_LOCATIONS = {
+    'home':  {'x': 0.0,  'y': 0.0,  'theta': 0.0},
+    'table': {'x': 1.5,  'y': 0.3,  'theta': 0.0},
+    'person':{'x': 0.8,  'y':-0.5,  'theta': 1.57},
+}
+
+def go_to(self, location_name, timeout=60):
+    loc = NAMED_LOCATIONS[location_name]
+    goal = MoveBaseGoal()
+    goal.target_pose.header.frame_id = "map"
+    goal.target_pose.pose.position.x = loc['x']
+    goal.target_pose.pose.position.y = loc['y']
+    # Convert theta to quaternion
+    q = quaternion_from_euler(0, 0, loc['theta'])
+    goal.target_pose.pose.orientation.z = q[2]
+    goal.target_pose.pose.orientation.w = q[3]
+    self.client.send_goal(goal)
+    return self.client.wait_for_result(rospy.Duration(timeout))
+\end{lstlisting}
+
+\section{Location Management}
+
+\subsection{Saving Locations}
+
+The \texttt{save\_location.py} script allows the operator to drive the robot to a
+desired position and save it with a name:
+
+\begin{lstlisting}[language=Python, caption={Saving current robot pose as named location.}]
+# Get current pose from odometry
+odom = rospy.wait_for_message('/mobile_base_controller/odom', Odometry)
+x = odom.pose.pose.position.x
+y = odom.pose.pose.position.y
+
+# Save to YAML
+locations[name] = {'x': x, 'y': y, 'theta': theta}
+with open('locations.yaml', 'w') as f:
+    yaml.dump(locations, f)
+\end{lstlisting}
+
+Saved locations persist across robot restarts and are loaded at agent startup.
+
+\subsection{Robot Pose Monitoring}
+
+\texttt{check\_robot\_pose.py} continuously prints the robot's current position in
+the map frame, useful during manual positioning and debugging:
+
+\begin{lstlisting}[language=bash]
+# Output example:
+[Pose] x=1.523 y=0.312 theta=0.015 rad (0.9 deg)
+\end{lstlisting}
+
+\section{Autonomous Mapping}
+
+\texttt{autonomous\_mapper.py} uses the GMapping SLAM algorithm to build a 2-D
+occupancy grid map of the environment while the robot navigates autonomously.
+The robot is teleoperated or follows a pre-defined exploration trajectory while
+the laser scanner data is used to incrementally build the map.
+The resulting map is saved in YAML/PGM format and loaded by \texttt{move\_base} for
+subsequent navigation sessions.
+
+\section{Recovery Behaviours}
+
+The \texttt{unstuck\_robot.py} script implements manual recovery when the robot's
+navigation stack declares it stuck (all recovery behaviours exhausted):
+
+\begin{enumerate}[noitemsep]
+  \item Publish a zero-velocity command to stop any ongoing motion.
+  \item Clear the local costmap via the \texttt{/move\_base/clear\_costmaps} service.
+  \item Rotate the base $\pm$0.5 rad in place.
+  \item Retry the original navigation goal.
+\end{enumerate}
+
+\section{Base Velocities for Simple Motions}
+
+For cases where full navigation planning is not needed — such as rotating to face
+a detected object or backing away from an obstacle — \texttt{quick\_move\_base.py}
+and \texttt{turn\_and\_go.py} publish directly to \texttt{/cmd\_vel}:
+
+\begin{lstlisting}[language=Python, caption={Publishing a rotation command.}]
+cmd = Twist()
+cmd.angular.z = 0.3   # rad/s counterclockwise
+pub.publish(cmd)
+rospy.sleep(duration)
+cmd.angular.z = 0.0
+pub.publish(cmd)      # stop
+\end{lstlisting}
+
+\section{Integration with the Agent}
+
+Navigation is scaffolded in the agent via the \texttt{NavigateToSkill} in
+\texttt{skills/navigate\_to.py}.
+The skill checks affordance by verifying that \texttt{move\_base} is available
+(1-second timeout on the action server) and that the requested location name exists
+in the location dictionary.
+On execution, it calls \texttt{NavigationClient.go\_to()} with a 60-second timeout.
+
+The skill is not currently loaded into the agent's skill library by default because:
+\begin{itemize}[noitemsep]
+  \item Navigation requires a pre-built map specific to the deployment environment.
+  \item Object positions (table, handover point) must be consistent with the map frame.
+  \item In the test environment, the robot can reach all relevant objects from
+        a single fixed position.
+\end{itemize}
+
+To enable navigation, load the skill in \texttt{EmbodiedAgent.\_load\_skills()}:
+
+\begin{lstlisting}[language=Python, caption={Enabling navigation in the agent.}]
+from skills.navigate_to import NavigateToSkill
+self.skills['navigate_to'] = NavigateToSkill()
+\end{lstlisting}
+
+and add a corresponding description in the VLM skill list.

@@ -1,0 +1,50 @@
+% ============================================================
+%  ABSTRACT
+% ============================================================
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+The convergence of large-scale foundation models with physical robotics represents one
+of the most active frontiers in AI research.
+This thesis investigates a central question of that frontier: can a zero-shot
+vision-language model (VLM), with no robot-specific fine-tuning, serve as the cognitive
+core of a physical manipulation agent that reliably completes multi-step tasks in the
+real world?
+
+We present the design, implementation, and evaluation of a \textbf{Vision--Language--Action
+(VLA) agent} deployed on the PAL Robotics \tiago{} mobile manipulator.
+The agent follows a \textbf{ReAct-style perceive-reason-act loop}: at each cycle, it
+captures an annotated camera image, assembles a structured scene context, and queries
+\textbf{Google Gemini 2.0 Flash} --- a state-of-the-art multimodal LLM --- with a
+chain-of-thought-eliciting prompt.
+The model responds with a JSON-structured skill selection and natural-language rationale;
+the skill is validated against affordance preconditions and executed physically.
+Execution outcomes feed back as observations into the next VLM query, closing the loop
+in the style of Inner Monologue.
+
+The physical execution layer integrates \textbf{YOLO11n} real-time object detection
+(deployed as an HTTP microservice to overcome a Python~3.6 Docker constraint) with a
+\textbf{RANSAC cylinder-fitting} 3-D localisation pipeline averaged over five frames
+for noise robustness.
+The final vertical approach exploits the \tiago{} torso's world-Z-aligned prismatic
+joint to guarantee a straight-line end-effector descent without Cartesian IK, a key
+insight that emerged through five iterations of real-robot development.
+A \textbf{handover skill} closes the ``find--grasp--deliver'' task chain by detecting
+a person through YOLO and depth sensing and presenting the object at an ergonomic height.
+
+A \textbf{multi-layer safety system} --- per-skill affordance gating, consecutive
+failure tracking, and automatic safe-pose recovery --- prevents unsafe behaviour during
+VLM reasoning errors or sensor failures.
+
+Experimental results demonstrate end-to-end task completion of \todo{XX\%} for the full
+``find, grasp, and hand over'' scenario, a grasp success rate of \todo{XX\%} over 27
+trials, and VLM skill selection accuracy of \todo{XX\%}.
+The system confirms that zero-shot frontier VLMs, paired with carefully engineered
+classical controllers and affordance feedback, provide a practical and data-free
+alternative to large-dataset end-to-end VLA approaches for constrained manipulation
+domains.
+
+\vspace{1em}
+\noindent\textbf{Keywords:} Embodied AI, Vision-Language-Action Agent, Agentic AI,
+Multimodal LLM, Chain-of-Thought, ReAct, Mobile Manipulation, YOLO, Gemini,
+Zero-Shot Reasoning, ROS, Grasping, Human-Robot Interaction.

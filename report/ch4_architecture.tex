@@ -1,0 +1,361 @@
+% ============================================================
+%  CHAPTER 4 — System Architecture
+% ============================================================
+\chapter{System Architecture}
+\label{ch:architecture}
+
+\section{Overview}
+
+The system follows a \textbf{perceive--reason--act} control loop inspired by the
+SayCan \cite{ahn2022saycan} and VILA \cite{lin2024vila} architectures.
+At each iteration, the robot observes its environment, reasons about what to do using
+a VLM, and executes a physical skill.
+This loop repeats until the task is declared complete by the VLM, a maximum number
+of steps is reached, or a safety condition is triggered.
+
+Five high-level components collaborate to implement this loop:
+
+\begin{enumerate}
+  \item \textbf{EmbodiedAgent} — the top-level orchestrator.
+  \item \textbf{VLMReasoner} — the Gemini API client and prompt manager.
+  \item \textbf{PerceptionManager} — camera access and YOLO detection.
+  \item \textbf{StateManager} — robot state tracking and scene graph.
+  \item \textbf{Skill Library} — executable manipulation and motion modules.
+\end{enumerate}
+
+\section{Control Loop}
+
+Figure~\ref{fig:control_loop} illustrates one iteration of the control loop.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm and 2.2cm]
+  % Nodes
+  \node[box, minimum width=4cm] (input)   {Voice / Text Input};
+  \node[box, minimum width=4cm, below=of input]  (capture) {Capture RGB Image};
+  \node[box, minimum width=4cm, below=of capture](detect)  {YOLO-E open-vocab detection};
+  \node[box, minimum width=4cm, below=of detect] (state)   {Assemble State};
+  \node[box, minimum width=4cm, below=of state]  (vlm)     {Gemini 2.0 Flash\\(VLM Query)};
+  \node[box, minimum width=4cm, below=of vlm]    (afford)  {Affordance Check};
+  \node[box, minimum width=4cm, below=of afford] (exec)    {Execute Skill};
+  \node[box, minimum width=4cm, below=of exec]   (update)  {Update State + TTS};
+
+  % Side boxes
+  \node[sbox, right=2.2cm of vlm]   (skills) {\textbf{Skills}\\grab\_object\\handover\\search\_with\_head\\push\_aside\\navigate\_to\\go\_home / wave};
+  \node[sbox, left=2.2cm of afford] (safety) {\textbf{Safety}\\Affordance gate\\Failure counter\\Safe mode};
+
+  % Arrows
+  \foreach \a/\b in {input/capture, capture/detect, detect/state, state/vlm,
+                      vlm/afford, afford/exec, exec/update}
+    \draw[arr] (\a) -- (\b);
+
+  \draw[arr] (exec.east) -- (skills.west);
+  \draw[arr] (afford.west) -- (safety.east);
+  \draw[arr] (safety.north) |- (vlm.west);
+
+  % Loop back
+  \draw[arr] (update.east) -- ++(1.5,0) |- (capture.east)
+    node[midway, right, font=\small] {next step};
+
+  % Done branch
+  \draw[arr] (vlm.south east) -- ++(1.0,-0.5)
+    node[right, font=\small] {skill=done → finish};
+\end{tikzpicture}
+\caption{One iteration of the perceive--reason--act control loop.}
+\label{fig:control_loop}
+\end{figure}
+
+\section{Split-Process Deployment}
+
+A central architectural constraint is that the Docker container running ROS Melodic
+uses \textbf{Python 3.6}, which is incompatible with Ultralytics YOLO11n (requires
+Python $\geq$ 3.8) and other modern deep learning libraries.
+The solution is a \textbf{split-process architecture} where compute-intensive AI
+inference runs on the host machine while all ROS communication runs inside the container.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.6cm and 1.5cm]
+
+  % Docker container box
+  \begin{scope}
+  \node[draw=darkblue, thick, rounded corners=6pt, fill=lightblue!10,
+        minimum width=7cm, minimum height=6.5cm, label={[darkblue]above:\textbf{Docker Container (Python 3.6 / ROS Melodic)}}]
+        at (0,0) {};
+  \end{scope}
+
+  \node[box, minimum width=6cm] (agent)   at (0, 2.3) {EmbodiedAgent};
+  \node[box, minimum width=6cm] (percept) at (0, 1.2) {PerceptionManager v2};
+  \node[box, minimum width=6cm] (state)   at (0, 0.1) {StateManager};
+  \node[box, minimum width=6cm] (vlmbox)  at (0,-1.0) {VLMReasoner};
+  \node[box, minimum width=6cm] (vis)     at (0,-2.1) {Web Visualiser (port 8080)};
+
+  % Host box
+  \begin{scope}
+  \node[draw=palgreen, thick, rounded corners=6pt, fill=palgreen!5,
+        minimum width=5cm, minimum height=2.5cm,
+        label={[palgreen]above:\textbf{Host Machine (Python 3.10)}}]
+        at (6.5, 0.5) {};
+  \end{scope}
+
+  \node[sbox, minimum width=4cm] (yolo)   at (6.5, 1.1) {YOLO-E Service (yoloe-26s-seg)\\(port 5001)};
+  \node[sbox, minimum width=4cm] (live)   at (6.5, 0.0) {Live Detector\\(port 8081)};
+
+  % Cloud
+  \node[draw=gray, dashed, rounded corners=6pt, minimum width=3cm, minimum height=1.0cm,
+        align=center, font=\small] (gemini) at (6.5,-2.1) {Gemini 2.0 Flash\\via Eden AI\\(HTTPS)};
+
+  % Arrows
+  \draw[arr] (percept.east) -- node[above, font=\tiny]{HTTP POST /detect} (yolo.west);
+  \draw[arr, dashed] (vlmbox.east) -- node[below, font=\tiny]{HTTPS REST} (gemini.west);
+
+  % ROS arrows (internal)
+  \draw[arr, gray] (agent.south) -- (percept.north);
+  \draw[arr, gray] (percept.south) -- (state.north);
+  \draw[arr, gray] (agent.west) -- ++(-0.5,0) |- (vis.west);
+
+\end{tikzpicture}
+\caption{Split-process deployment architecture.}
+\label{fig:deployment}
+\end{figure}
+
+\section{ROS Communication Graph}
+
+The agent communicates with the robot hardware exclusively through ROS topics and
+action servers. Table~\ref{tab:ros_graph} lists all ROS interfaces used.
+
+\small
+\begin{longtable}{p{7cm}lp{3.5cm}}
+\caption{ROS topics and action servers used by the system.}
+\label{tab:ros_graph} \\
+\toprule
+\textbf{Name} & \textbf{Dir.} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\multicolumn{3}{c}{\small\itshape (continued)} \\
+\toprule
+\textbf{Name} & \textbf{Dir.} & \textbf{Purpose} \\
+\midrule
+\endhead
+\path{/xtion/rgb/image_raw}                       & Sub  & RGB frames \\
+\path{/xtion/depth_registered/image_raw}          & Sub  & Depth frames \\
+\path{/xtion/rgb/camera_info}                     & Sub  & Camera intrinsics \\
+\path{/joint_states}                              & Sub  & Joint positions \\
+\path{/mobile_base_controller/odom}               & Sub  & Base odometry \\
+\path{/agent/camera_annotated}                    & Pub  & Annotated image \\
+\path{/agent/status}                              & Pub  & JSON status \\
+\path{/planning_scene}                            & Pub  & Collision objects \\
+\path{/play_motion}                               & Act  & Pre-defined motions \\
+\path{/move_group}                                & Act  & MoveIt planning \\
+\path{/tts}                                       & Act  & Text-to-speech \\
+\path{/head_controller/follow_joint_trajectory}   & Act  & Head pan/tilt \\
+\path{/torso_controller/follow_joint_trajectory}  & Act  & Torso lift \\
+\path{/move_base}                                 & Act  & Navigation \\
+\path{/clear_octomap}                             & Srv  & Reset octomap \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Data Flow}
+
+Figure~\ref{fig:dataflow} shows the data flow from user input to physical action
+for a typical command (\emph{``Grab the bottle''}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  dnode/.style={rectangle, rounded corners=3pt, draw=darkblue,
+                fill=lightblue!25, minimum width=3.2cm, minimum height=0.6cm,
+                font=\small, align=center},
+  darr/.style={-{Stealth[length=5pt]}, thick, draw=darkblue},
+  dlabel/.style={font=\tiny\itshape, midway, above},
+  node distance=0.5cm and 1.8cm
+]
+  \node[dnode] (cmd)    {``Grab the bottle''};
+  \node[dnode, below=of cmd]    (rgb)   {RGB image\\640×480};
+  \node[dnode, below=of rgb]    (yolo)  {YOLO-E\\bboxes + scores};
+  \node[dnode, below=of yolo]   (depth) {Depth cloud\\back-projected};
+  \node[dnode, below=of depth]  (state) {State dict\\gripper/location/objects};
+  \node[dnode, below=of state]  (prompt){System + user\\prompt + image};
+  \node[dnode, below=of prompt] (json)  {JSON response\\skill + params};
+  \node[dnode, below=of json]   (aff)   {Affordance\\check};
+  \node[dnode, below=of aff]    (skill) {Skill execution\\(subprocess / action)};
+  \node[dnode, below=of skill]  (hw)    {Robot hardware\\(arm, torso, gripper)};
+
+  \foreach \a/\b/\lbl in {
+    cmd/rgb/Xtion camera,
+    rgb/yolo/HTTP microservice,
+    yolo/depth/point cloud,
+    depth/state/StateManager,
+    state/prompt/VLMReasoner,
+    prompt/json/Gemini API,
+    json/aff/EmbodiedAgent,
+    aff/skill/if OK,
+    skill/hw/ROS actions}
+  {
+    \draw[darr] (\a) -- node[dlabel]{\lbl} (\b);
+  }
+\end{tikzpicture}
+\caption{Data flow from user command to physical robot action.}
+\label{fig:dataflow}
+\end{figure}
+
+\section{Multi-Step Task Execution}
+
+For tasks requiring more than one skill (\eg ``find the bottle and give it to me''),
+the agent runs the perceive--reason--act loop iteratively.
+At each step after the first, the prompt to the VLM is augmented with the list of
+already-executed skills:
+
+\begin{mdframed}[style=promptbox]
+\small
+\begin{verbatim}
+Original task: "find the bottle and give it to me"
+Completed so far: search_with_head, grab_bottle
+
+If the original task is FULLY complete, respond with skill='done'.
+Otherwise, what skill should execute next?
+\end{verbatim}
+\end{mdframed}
+
+The loop terminates when:
+\begin{itemize}[noitemsep]
+  \item The VLM responds with \texttt{skill="done"} (task complete).
+  \item The same skill is selected twice in a row (convergence heuristic).
+  \item The maximum step count (default 5) is reached.
+  \item A skill fails and safe mode is entered.
+\end{itemize}
+
+\section{Configuration and Environment Variables}
+
+\begin{table}[H]
+\centering
+\caption{Environment variables controlling system behaviour.}
+\label{tab:env_vars}
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+\textbf{Variable} & \textbf{Purpose} & \textbf{Default} \\
+\midrule
+\texttt{EDENAI\_API\_KEY}        & Eden AI API key (Gemini 2.0 Flash proxy) & — (required) \\
+\texttt{GROQ\_API\_KEY}         & Groq API key (LLaMA-3.3-70b LLM)        & — (required) \\
+\texttt{YOLO\_SERVICE\_URL}     & URL of YOLO-E HTTP microservice          & \texttt{http://localhost:5001} \\
+\texttt{ROBOT\_IP}              & Robot ROS master IP address              & \texttt{10.68.0.1} \\
+\texttt{HOST\_IP}               & Workstation IP for ROS communication     & auto-detect \\
+\texttt{ROS\_MASTER\_URI}       & ROS master endpoint (set from ROBOT\_IP) & — (required) \\
+\texttt{ROS\_IP}                & Local IP for ROS (set from HOST\_IP)     & — (required) \\
+\texttt{TARGET\_DESCRIPTION}    & VLM chain-of-thought hint for grasping   & unset \\
+\texttt{OBSTACLE\_OBJECTS}      & JSON list of collision objects (MoveIt)  & unset \\
+\texttt{GRASP\_DX}              & Grasp offset X override (m)              & from YAML \\
+\texttt{GRASP\_DY}              & Grasp offset Y override (m)              & from YAML \\
+\texttt{GRASP\_DZ}              & Grasp offset Z override (m)              & from YAML \\
+\texttt{PULSE\_SERVER}          & If set, use PulseAudio mic input         & unset \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Neuro-Symbolic Rule Engine}
+\label{sec:rule_engine}
+
+A key architectural addition beyond a plain perceive-reason-act loop is the
+\textbf{SymbolicRuleEngine} — a forward-chaining inference engine embedded
+inside the \texttt{StateManager}.
+It maintains a typed fact base and fires a set of predefined rules to fixpoint
+(at most 20 iterations per step), deriving new symbolic facts from grounded
+3D observations.
+
+\subsection{Fact Base}
+
+Facts are stored as Python tuples in a set for O(1) membership testing:
+\begin{lstlisting}[language=Python]
+('left_of',        'bottle', 'cup')
+('reachable',      'bottle')
+('can_grasp',      'bottle')
+('has_affordance', 'bottle', 'graspable')
+('holding',        'gripper', 'bottle')
+('bottle_is_open',)            # semantic fact from VLM
+\end{lstlisting}
+
+\subsection{Affordance Ontology}
+
+Static per-class affordances determine what actions are physically meaningful:
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+\textbf{Object} & \textbf{Affordances} \\
+\midrule
+bottle  & graspable, drinkable, rollable \\
+cup     & graspable, drinkable \\
+remote  & graspable, pressable \\
+person  & can\_receive, addressable \\
+chair   & sittable, pushable \\
+table   & surface, placeable\_on \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Forward-Chaining Rules}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+\textbf{Rule} & \textbf{Condition} & \textbf{Conclusion} \\
+\midrule
+Symmetry      & \texttt{near(A,B)}                                    & \texttt{near(B,A)} \\
+Symmetry      & \texttt{left\_of(A,B)}                                & \texttt{right\_of(B,A)} \\
+Symmetry      & \texttt{above(A,B)}                                   & \texttt{below(B,A)} \\
+Transitivity  & \texttt{left\_of(A,B) $\wedge$ left\_of(B,C)}        & \texttt{left\_of(A,C)} \\
+Co-location   & \texttt{on\_surface(A,T) $\wedge$ on\_surface(B,T)}  & \texttt{co\_located(A,B)} \\
+Reachability  & 3D distance $<$ 1.20\,m, $|Y|<$ 0.65\,m             & \texttt{reachable(obj)} \\
+Graspability  & \texttt{reachable(A) $\wedge$ graspable(A)}          & \texttt{can\_grasp(A)} \\
+Handover      & \texttt{holding(gripper,X) $\wedge$ near(robot,P)}   & \texttt{handover\_possible(X,P)} \\
+Stacking      & \texttt{above(A,B) $\wedge$ near\_xy(A,B)}           & \texttt{stacked\_on(A,B)} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The derived fact base is serialised and prepended to every VLM system prompt,
+giving the model structured symbolic context alongside the raw image:
+\begin{center}
+\small\ttfamily
+can\_grasp(bottle), reachable(bottle), left\_of(bottle,cup), near\_3d(bottle,cup)
+\end{center}
+
+\subsection{3D Spatial Relation Thresholds}
+
+All positions are expressed in the \texttt{base\_footprint} frame
+(X\,=\,forward, Y\,=\,left, Z\,=\,up), with hysteresis bands to prevent
+oscillation between labels:
+
+\begin{center}
+\small
+\begin{tabular}{llr}
+\toprule
+\textbf{Relation} & \textbf{Condition} & \textbf{Threshold} \\
+\midrule
+\texttt{left\_of(A,B)}   & $A_Y > B_Y + \delta$            & $\delta=0.08$\,m \\
+\texttt{in\_front\_of}   & $A_X < B_X - \delta$            & $\delta=0.10$\,m \\
+\texttt{above(A,B)}      & $A_Z > B_Z + \delta$            & $\delta=0.08$\,m \\
+\texttt{near\_3d(A,B)}   & $\|A-B\|_3 < 0.30$\,m          & Euclidean \\
+\texttt{on\_table(A)}    & $A_Z < 0.90$\,m                 & height heuristic \\
+\texttt{reachable(A)}    & $A_X<1.20$\,m, $|A_Y|<0.65$\,m & arm envelope \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Self-referential pairs ($A = B$) are explicitly filtered to prevent
+nonsensical facts such as \texttt{left\_of(bottle,\,bottle)}.
+
+\subsection{VLM Semantic Enrichment}
+
+In addition to geometric facts, the VLM returns a
+\texttt{semantic\_facts} field in its JSON response — visual observations
+that geometry cannot compute:
+\begin{itemize}[noitemsep]
+  \item Object state: \texttt{bottle\_is\_open}, \texttt{cup\_is\_full}
+  \item Social cues: \texttt{person\_is\_reaching}, \texttt{person\_is\_looking}
+  \item Scene state: \texttt{table\_is\_cluttered}, \texttt{path\_is\_clear}
+\end{itemize}
+These are merged into the fact base after each VLM call and used in the next
+forward-chaining pass, completing the neuro-symbolic loop.

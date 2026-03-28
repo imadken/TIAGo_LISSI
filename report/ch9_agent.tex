@@ -1,0 +1,378 @@
+% ============================================================
+%  CHAPTER 9 — Agent Orchestration and Skill Library
+% ============================================================
+\chapter{Agent Orchestration and Skill Library}
+\label{ch:agent}
+
+\section{Overview}
+
+The \texttt{EmbodiedAgent} class (\texttt{embodied\_agent\_v2.py}) is the top-level
+orchestrator that integrates all subsystems into a coherent perceive--reason--act
+loop.
+It manages the user interface (voice and text), coordinates with the VLM reasoner and
+perception manager, executes the selected skill, and enforces the safety policy.
+
+\section{Initialisation Sequence}
+
+The agent initialises all sub-components sequentially on startup, with timeout-guarded
+connection to each ROS action server:
+
+\begin{enumerate}
+  \item \textbf{VLMReasoner}: validate Google API key, connect to Gemini API.
+  \item \textbf{PerceptionManager}: subscribe to camera topics, connect to YOLO service.
+  \item \textbf{StateManager}: subscribe to \texttt{/joint\_states} and
+        \texttt{/mobile\_base\_controller/odom}.
+  \item \textbf{Load skills}: instantiate all skill objects and connect their
+        action clients.
+  \item \textbf{TTS}: connect to \texttt{/tts} action server (10 s timeout).
+  \item \textbf{STT}: enumerate microphones and select best device.
+  \item \textbf{Publishers}: advertise \texttt{/agent/camera\_annotated} and
+        \texttt{/agent/status}.
+  \item \textbf{Safety handlers}: register SIGINT, SIGTERM, and ROS shutdown hooks.
+\end{enumerate}
+
+\section{Skill Library}
+
+\subsection{Abstract Base Class}
+
+All skills inherit from \texttt{BaseSkill} and implement three mandatory methods:
+
+\begin{lstlisting}[language=Python, caption={BaseSkill abstract interface.}]
+class BaseSkill:
+    def check_affordance(self, params, state) -> (bool, str):
+        """Check if skill can execute given current state.
+        Returns (can_execute: bool, reason: str)."""
+
+    def execute(self, params) -> bool:
+        """Execute the skill. Return True on success."""
+
+    def get_description(self) -> str:
+        """Return description string shown to VLM."""
+\end{lstlisting}
+
+The separation between \texttt{check\_affordance} and \texttt{execute} is critical:
+it allows the agent to verify preconditions \emph{before} attempting physical
+execution, and to communicate failures back to the VLM without having moved the robot.
+
+\subsection{Skill: grab\_bottle}
+
+\begin{description}[noitemsep]
+  \item[Description shown to VLM:] \textit{grab\_bottle() — Grasp any detected
+    object (bottle, phone, cup, mug, etc.) in front of the robot using vision and
+    arm control.}
+  \item[Affordance check:]
+    (1) Gripper must be \texttt{empty}.
+    (2) At least one graspable object must appear in detected objects.
+    (3) The reach script must exist on disk.
+  \item[Execution:] Calls \texttt{reach\_object\_v5\_torso\_descent\_working.py}
+    as a subprocess with a 3-minute timeout.
+    Returns success if the subprocess exits with code 0.
+\end{description}
+
+\subsection{Skill: search\_with\_head}
+
+\begin{description}[noitemsep]
+  \item[Description shown to VLM:] \textit{search\_with\_head(object\_name=`bottle')
+    — Move head to scan surroundings for object.}
+  \item[Affordance check:] Always available.
+  \item[Execution:] Sweeps head through 12 pan/tilt positions (Table~\ref{tab:head_positions}
+    in Chapter~\ref{ch:manipulation}). Runs YOLO detection at each position after
+    a 2 s settle delay. Returns \texttt{True} when target is found.
+\end{description}
+
+\subsection{Skill: handover\_to\_person}
+
+\begin{description}[noitemsep]
+  \item[Description shown to VLM:] \textit{handover\_to\_person(object=`bottle')
+    — Detect person with YOLO+depth, extend arm toward them, and hand over held
+    object. Use after grab\_bottle when the goal is to deliver an object to someone.}
+  \item[Affordance check:]
+    (1) Gripper must be \texttt{holding:*} (non-empty).
+    (2) A \texttt{person} must appear in detected objects.
+  \item[Execution:] Nine-step pipeline — home, clear planning scene, get TF,
+    detect person, add person collision box, move arm to handover height,
+    speak, open gripper, go home.
+\end{description}
+
+\subsection{Skill: push\_aside\_object}
+
+\begin{description}[noitemsep]
+  \item[Description shown to VLM:] \textit{push\_aside\_object(blocking\_object=\textquoteleft cup\textquoteright)
+    --- Push a blocking object sideways to clear the path to the target.
+    Use when an object obstructs the arm's path to the grasp target.}
+  \item[Affordance check:]
+    (1) A detected object matching the blocking name must be visible.
+    (2) A 3D position must be available (depth + TF).
+  \item[Execution:] Determines lateral push direction (away from robot centreline),
+    positions the closed gripper alongside the object, then executes a Cartesian
+    lateral push via MoveIt.
+    Respects a maximum table-lateral limit (0.55\,m) to prevent pushing objects
+    off the edge.
+\end{description}
+
+\subsection{Skill: navigate\_to}
+
+\begin{description}[noitemsep]
+  \item[Description shown to VLM:] \textit{navigate\_to(location=\textquoteleft table\textquoteright)
+    --- Drive the robot base to a named location.}
+  \item[Affordance check:] The named location must exist in \texttt{config/locations.yaml}.
+  \item[Execution:] Calls \texttt{NavigationClient.navigate\_to(location\_name)}
+    which sends a goal to the \texttt{move\_base} action server.
+    Named locations (home, table, shelf) are defined in \texttt{config/locations.yaml}
+    as (x, y, $\theta$) waypoints in the map frame.
+\end{description}
+
+\subsection{Simple Motion Skills}
+
+Four skills wrap PAL \texttt{play\_motion} pre-defined trajectories:
+
+\begin{table}[H]
+\centering
+\caption{Simple motion skills.}
+\label{tab:simple_skills}
+\begin{tabular}{lll}
+\toprule
+\textbf{Skill} & \textbf{Motion name} & \textbf{Affordance} \\
+\midrule
+\texttt{go\_home}   & \texttt{home}  & Always \\
+\texttt{wave}       & \texttt{wave}  & Always \\
+\texttt{open\_hand} & \texttt{open}  & Always \\
+\texttt{close\_hand}& \texttt{close} & Always (warns if already holding) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All four share a single \texttt{play\_motion} action client instance (class-level
+singleton) to avoid creating multiple connections to the same server.
+
+\section{Multi-Step Execution Loop}
+
+The \texttt{execute\_command()} method implements the iterative control loop.
+Figure~\ref{fig:exec_loop} shows the state machine.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  s/.style={rectangle, rounded corners=4pt, draw=darkblue, thick,
+            fill=lightblue!30, minimum width=3.8cm, minimum height=0.7cm,
+            align=center, font=\small},
+  d/.style={diamond, draw=darkblue, thick, fill=yellow!20,
+            minimum width=2.2cm, minimum height=0.8cm,
+            align=center, font=\footnotesize},
+  a/.style={-{Stealth[length=5pt]}, thick, draw=darkblue},
+  node distance=0.5cm and 1.8cm
+]
+  \node[s] (cap)    {Capture image\\+ run YOLO};
+  \node[s, below=of cap] (state)  {Assemble state};
+  \node[s, below=of state](query) {Query VLM};
+  \node[d, below=of query](done)  {skill\\=done?};
+  \node[d, below=of done] (aff)   {Affordance\\OK?};
+  \node[s, below=of aff]  (exec)  {Execute skill};
+  \node[d, below=of exec] (suc)   {Success?};
+  \node[s, right=2.5cm of suc]   (fail)  {Ensure safe\\pose};
+  \node[s, right=2.5cm of done]  (finish){Task\\complete};
+
+  \draw[a] (cap) -- (state);
+  \draw[a] (state) -- (query);
+  \draw[a] (query) -- (done);
+  \draw[a] (done.east) -- node[above, font=\tiny]{yes} (finish.west);
+  \draw[a] (done.south) -- node[right, font=\tiny]{no} (aff.north);
+  \draw[a] (aff.west)  -- ++(-1.2,0) |- node[left, font=\tiny]{no — retry with failure ctx} (query.west);
+  \draw[a] (aff.south) -- node[right, font=\tiny]{yes} (exec.north);
+  \draw[a] (exec) -- (suc);
+  \draw[a] (suc.east)  -- node[above, font=\tiny]{no}  (fail.west);
+  \draw[a] (suc.west)  -- ++(-1.5,0) |- node[left, font=\tiny]{yes — next step} (cap.west);
+\end{tikzpicture}
+\caption{Multi-step execution loop state machine.}
+\label{fig:exec_loop}
+\end{figure}
+
+Key design choices in the loop:
+
+\begin{itemize}
+  \item \textbf{Affordance failure as context}: when a skill's affordance check fails,
+        the failure reason is passed back to the VLM in the next query, allowing it to
+        select a different skill (\eg search\_with\_head if grab fails because object
+        is not visible).
+
+  \item \textbf{Loop detection}: if the same skill is selected twice consecutively,
+        the loop assumes convergence and stops.
+
+  \item \textbf{Visualisation}: at each step, the annotated image and status JSON
+        are published to \texttt{/agent/camera\_annotated} and \texttt{/agent/status}
+        for the web dashboard.
+\end{itemize}
+
+\section{State Manager}
+
+The \texttt{StateManager} maintains a live representation of the robot and scene state,
+updated from ROS subscribers.
+
+\subsection{State Dictionary}
+
+At each step, the following state dict is assembled and passed to the VLM:
+
+\begin{lstlisting}[language=JSON, caption={State dictionary passed to VLM at each step.}]
+{
+  "gripper":           "holding:bottle",
+  "base_location":     "table",
+  "detected_objects":  ["bottle at (185, 290)", "person at (410, 200)"],
+  "task_history":      ["\u2713 search_with_head", "\u2713 grab_bottle"],
+  "spatial_relations": ["bottle left_of person", "bottle near person"]
+}
+\end{lstlisting}
+
+\subsection{Scene Graph and Symbolic Rule Engine}
+
+Spatial relations are computed from 3D object positions in the \texttt{base\_footprint}
+frame (X\,=\,forward, Y\,=\,left, Z\,=\,up), extracted via depth camera back-projection
+and TF transforms.
+These geometric base facts seed the \textbf{SymbolicRuleEngine} (see
+Section~\ref{sec:rule_engine}), which derives higher-order facts by forward chaining
+to fixpoint.
+
+\textbf{Geometric base facts (3D):}
+\begin{itemize}[noitemsep]
+  \item \textbf{left\_of/right\_of}: $|A_Y - B_Y| > 0.08$\,m (hysteresis band).
+  \item \textbf{above/below}: $|A_Z - B_Z| > 0.08$\,m.
+  \item \textbf{near\_3d}: Euclidean distance $< 0.30$\,m.
+  \item \textbf{reachable}:  < 1.20$\,m and $|A_Y| < 0.65$\,m (arm envelope).
+  \item \textbf{on\_table}:  < 0.90$\,m and  < 1.5$\,m.
+\end{itemize}
+
+Self-referential pairs ( = B$) are filtered to prevent nonsensical facts such as
+\texttt{left\_of(bottle,\,bottle)}.
+If depth data is unavailable, the system falls back to 2D pixel heuristics with
+a \texttt{relation\_source: 2d} flag logged for diagnostics.
+
+\textbf{Derived facts (from rule engine):}
+\begin{itemize}[noitemsep]
+  \item \texttt{can\_grasp(A)}: \texttt{reachable(A) $\wedge$ graspable(A)}
+  \item \texttt{handover\_possible(X,P)}: \texttt{holding(gripper,X) $\wedge$ near\_3d(robot,P)}
+  \item \texttt{co\_located(A,B)}: objects on same surface
+  \item \texttt{stacked\_on(A,B)}: \texttt{above(A,B) $\wedge$ near\_xy(A,B)}
+\end{itemize}
+
+\textbf{VLM semantic enrichment:}
+After each VLM call, the \texttt{semantic\_facts} field of the JSON response is
+merged into the fact base and the rule engine re-fires.
+This allows the VLM to assert visual observations that geometry cannot compute
+(e.g., \texttt{bottle\_is\_open}, \texttt{person\_is\_reaching}), completing the
+neuro-symbolic loop.
+
+\subsection{Gripper State Tracking}
+
+Gripper status is tracked at two levels:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Automatic}: the \texttt{/joint\_states} subscriber monitors
+        \texttt{gripper\_left\_finger\_joint} position. Position $<$ 5 mm indicates
+        open; $>$ 15 mm indicates closed.
+  \item \textbf{Explicit}: skills call \texttt{state.update\_gripper\_status()} after
+        a successful grasp or release, setting \texttt{"holding:bottle"} or
+        \texttt{"empty"} respectively.
+\end{enumerate}
+
+Explicit updates take precedence and are not overridden by the automatic tracker,
+preventing false positives when the gripper closes on air.
+
+\section{Speech Interface}
+
+\subsection{Speech-to-Text}
+
+The agent supports two STT backends with automatic fallback:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Whisper (local)}: \texttt{recognizer.recognize\_whisper(audio,
+        model="base")}. Preferred: runs offline, handles accented speech well,
+        $\approx$74M parameters, runs in real time on CPU.
+  \item \textbf{Google STT}: \texttt{recognizer.recognize\_google(audio)}. Fallback
+        when Whisper fails or is unavailable.
+\end{enumerate}
+
+The microphone listens for up to 8 seconds with a 15-second phrase time limit.
+Ambient noise calibration is performed for 0.3 seconds before each listen.
+
+\subsection{Text-to-Speech}
+
+The agent speaks status messages at key points in the loop via the PAL TTS server.
+Messages are designed to be informative and short:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Event} & \textbf{Spoken message} \\
+\midrule
+Start of step & ``Looking at the scene.'' \\
+Objects found & ``I can see: bottle, person.'' \\
+VLM thinking  & ``Thinking about what to do.'' \\
+VLM rationale & First 200 chars of rationale \\
+Skill start   & ``Executing grab bottle.'' \\
+Skill done    & ``Grab bottle done.'' \\
+Task complete & ``Task complete!'' \\
+Failure       & ``Grab bottle failed. Returning to safe position.'' \\
+Safe mode     & ``Too many failures. Entering safe mode.'' \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Safety System}
+
+\subsection{Affordance Gating}
+
+Every skill is gated by \texttt{check\_affordance()} before execution.
+This prevents physically impossible or dangerous actions — for example, attempting
+to grasp when the gripper is already holding an object, or attempting a handover
+when no person is detected.
+
+\subsection{Consecutive Failure Tracking}
+
+The agent tracks the number of consecutive skill failures:
+
+\begin{lstlisting}[language=Python, caption={Failure counter and safe mode trigger.}]
+if not success:
+    self.consecutive_failures += 1
+    if self.consecutive_failures >= self.max_consecutive_failures:  # = 3
+        self._enter_safe_mode(
+            reason="{} consecutive failures".format(self.consecutive_failures))
+        return {'success': False, 'safe_mode': True, ...}
+    self._ensure_safe_pose(reason="skill_failure")
+\end{lstlisting}
+
+A successful skill resets the counter to zero.
+
+\subsection{Safe Mode}
+
+When 3 consecutive failures are detected, the agent enters \textbf{safe mode}:
+
+\begin{enumerate}[noitemsep]
+  \item \texttt{open\_hand} is executed (release any held object).
+  \item \texttt{go\_home} is executed (return arm to rest).
+  \item All further command execution is blocked.
+  \item The user must send the command \texttt{reset} to resume.
+\end{enumerate}
+
+\subsection{Shutdown Sequence}
+
+On SIGINT, SIGTERM, or ROS shutdown, a registered handler executes:
+\begin{enumerate}[noitemsep]
+  \item \texttt{go\_home} — return arm to rest.
+  \item \texttt{open\_hand} — release any held object.
+\end{enumerate}
+
+This ensures the robot is in a stable, safe configuration regardless of what it was
+doing when interrupted.
+
+\section{Live Visualisation}
+
+At each control step, the agent publishes:
+
+\begin{itemize}[noitemsep]
+  \item \texttt{/agent/camera\_annotated} (\texttt{sensor\_msgs/Image}): the current
+        RGB frame annotated with YOLO bounding boxes and the active skill name overlaid
+        as a text banner.
+  \item \texttt{/agent/status} (\texttt{std\_msgs/String}): a JSON string with the
+        current skill, gripper state, detected objects, location, and last 5 tasks.
+\end{itemize}
+
+These are consumed by \texttt{web\_visualiser.py}, providing a real-time browser
+dashboard for monitoring the agent during operation.

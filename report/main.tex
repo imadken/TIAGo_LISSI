@@ -1,0 +1,98 @@
+% ============================================================
+%  MAIN DOCUMENT — Vision-Language-Action Agent for TIAGo
+%  Compile: pdflatex main.tex (run twice for TOC/refs)
+% ============================================================
+\documentclass[12pt, a4paper, twoside]{report}
+
+\input{preamble}
+
+\graphicspath{{figures/}}
+
+% ---- Acronyms -----------------------------------------------
+\input{acronyms}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+% ---- Front matter -------------------------------------------
+\pagenumbering{roman}
+
+% Title page
+\begin{titlepage}
+  \centering
+  \vspace*{1.5cm}
+
+  {\large \textbf{UPEC} \par}
+  \vspace{0.3cm}
+
+
+  \rule{\linewidth}{1.5pt}\vspace{0.5cm}
+  {\Huge\bfseries\color{darkblue}
+    Vision--Language--Action Agent\\[0.4em]
+    for a Mobile Manipulator Robot
+  \par}
+  \vspace{0.3cm}
+  \rule{\linewidth}{0.8pt}
+
+  \vspace{1.5cm}
+  {\Large\itshape
+    Integrating Multimodal Large Language Models,\\
+    Real-Time Object Detection, and Robotic Manipulation\\
+    on the PAL Robotics \tiago{} Platform
+  \par}
+
+  \vfill
+
+  \begin{tabular}{rl}
+    \textbf{Author:}      & Abderrahmene Amar Benhamlaoui \\[4pt]
+    \textbf{Supervisor:}  & Ferhat Attal \\[4pt]
+    \textbf{Programme:}   & Master IA2S, Universit\'e Paris-Est Cr\'eteil (UPEC) \\[4pt]
+    \textbf{Institution:} & LISSI Laboratory (EA~3956), UPEC \\[4pt]
+    \textbf{Date:}        & \today \\
+  \end{tabular}
+
+  \vspace{1.5cm}
+  % \includegraphics[width=3cm]{isep_logo}   % uncomment and replace with your institution logo
+\end{titlepage}
+
+% ---- Abstract -----------------------------------------------
+\cleardoublepage
+\input{abstract}
+
+% ---- Acknowledgements ---------------------------------------
+\cleardoublepage
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+\todo{Write acknowledgements here.}
+
+% ---- Table of Contents, Figures, Tables ---------------------
+\cleardoublepage
+\tableofcontents
+
+\cleardoublepage
+\listoffigures
+
+\cleardoublepage
+\listoftables
+
+% ---- Acronyms -----------------------------------------------
+\cleardoublepage
+\printglossary[type=\acronymtype, title=List of Acronyms]
+
+% ---- Main matter --------------------------------------------
+\cleardoublepage
+\pagenumbering{arabic}
+
+\input{ch1_introduction}
+\input{ch2_state_of_the_art}
+\input{ch3_system}
+\input{ch10_experiments}
+\input{ch5_conclusion}
+
+% ---- Bibliography -------------------------------------------
+\cleardoublepage
+\bibliographystyle{ieeetr}
+\bibliography{references}
+
+\end{document}

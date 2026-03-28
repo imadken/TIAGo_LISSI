@@ -1,0 +1,150 @@
+% ============================================================
+%  CHAPTER 1 — Introduction
+% ============================================================
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Context and Motivation}
+
+We are living through an inflection point in artificial intelligence.
+The 2017 Transformer architecture \cite{vaswani2017attention} sparked a revolution in
+scale: models trained on internet-scale corpora --- GPT-3 \cite{brown2020gpt3},
+GPT-4 \cite{achiam2023gpt4}, Gemini \cite{team2023gemini} --- demonstrate reasoning,
+planning, and instruction-following capabilities that were unimaginable five years prior.
+The discovery of \emph{emergent abilities} --- qualitatively new skills that appear
+suddenly at sufficient scale, absent in smaller models --- suggests that these systems
+are not merely doing sophisticated pattern matching but developing internal world models.
+
+When vision encoders were fused with these language models to produce
+\textbf{Vision-Language Models} (VLMs), the implications for robotics became
+immediately clear.
+A VLM can look at a kitchen scene and say ``there is a bottle to the left of the sink,
+and the person is standing near the window'' --- precisely the spatial understanding
+that a robot needs to act purposefully.
+The \textbf{agentic paradigm} completed the picture: by structuring VLM inference as a
+loop of perception, chain-of-thought reasoning, skill selection, execution, and
+observation (the ReAct pattern \cite{yao2022react}), a VLM becomes not just an
+answering machine but a \emph{decision-making agent}.
+
+At the same time, mobile manipulation robots have reached a level of mechanical
+maturity that makes them credible platforms for performing physical tasks in real
+environments.
+The missing ingredient was the cognitive layer --- and large-scale VLMs now provide it
+off the shelf, without the years of task-specific training data that previous approaches
+required.
+
+The natural convergence of these two trajectories is the \textbf{embodied AI agent}:
+a physical robot that perceives its environment through cameras and sensors, reasons
+about what to do using a VLM, and executes multi-step manipulation tasks from a single
+natural-language instruction.
+
+Consider a concrete example that motivated this thesis.
+A user says: \emph{``Hello TIAGo, I am thirsty, can you do something about that?''}
+The robot must understand the implicit request (find and bring a bottle), search the
+room if the bottle is not immediately visible, grasp it, locate the user, and hand it
+over --- all without explicit programming of any of these steps.
+This is the task successfully demonstrated in this work.
+
+This thesis addresses the challenge of building such a system on the PAL Robotics
+\tiago{} mobile manipulator platform --- under the additional constraint of a
+production robot environment (ROS Melodic, Python 3.6 Docker) that is
+incompatible with modern deep learning frameworks, requiring a novel split-process
+architecture to bridge the gap.
+
+\section{Problem Statement}
+
+Programming a robot to perform multi-step manipulation tasks in unstructured environments
+presents the following challenges:
+
+\begin{enumerate}
+  \item \textbf{Perception:} Objects must be detected and localised in 3-D space from
+        noisy RGB-D sensor data, with sufficient accuracy for the gripper to close around
+        them reliably.
+
+  \item \textbf{Reasoning:} Given a natural-language instruction, the system must
+        decompose the task into a sequence of executable skills, selecting the appropriate
+        action at each step based on what it currently observes.
+
+  \item \textbf{Execution:} Physical manipulation — grasping, lifting, and handing over
+        objects — must be robust to sensor noise, planning failures, and kinematic
+        constraints.
+
+  \item \textbf{Safety:} The robot must not harm itself, the environment, or nearby
+        humans, and must be able to recover from unexpected failures without human
+        intervention.
+
+  \item \textbf{Deployment constraints:} The target platform runs ROS Melodic with
+        Python 3.6, which is incompatible with modern deep learning frameworks.
+        The system must work within these constraints without sacrificing capability.
+\end{enumerate}
+
+\section{Objectives}
+
+The primary objective of this work is to design, implement, and evaluate a
+\textbf{Vision--Language--Action (VLA) agent} for the \tiago{} robot that:
+
+\begin{enumerate}
+  \item Accepts natural-language commands via voice or text input.
+  \item Perceives the environment through the robot's RGB-D camera using a
+        state-of-the-art object detector.
+  \item Reasons about the task using a multimodal large language model.
+  \item Executes a library of physical manipulation skills, including grasping,
+        searching, and handing over objects.
+  \item Maintains safety through affordance checking, failure counting, and safe-pose
+        recovery.
+  \item Operates reliably within the Python 3.6 / ROS Melodic deployment constraint.
+\end{enumerate}
+
+Secondary objectives include:
+
+\begin{itemize}
+  \item Iterative improvement of the grasping pipeline with measurable success rates.
+  \item Development of a web-based live visualiser for monitoring the agent.
+  \item Evaluation of multiple YOLO model variants for the perception task.
+  \item Characterisation of VLM latency and skill selection accuracy.
+\end{itemize}
+
+\section{Contributions}
+
+The main contributions of this work are:
+
+\begin{enumerate}
+  \item \textbf{A complete VLA agent for TIAGo}, integrating Gemini 2.0 Flash, YOLO11n,
+        and a modular skill library in a multi-step perceive--reason--act loop.
+
+  \item \textbf{A robust 3-D object localisation pipeline} using RANSAC cylinder
+        fitting on RGB-D point clouds with 5-frame averaging for stability.
+
+  \item \textbf{A split-process YOLO microservice architecture} that overcomes the
+        Python 3.6 Docker constraint by deploying the neural network on the host machine
+        and communicating via HTTP.
+
+  \item \textbf{An iterative grasping pipeline} (v1 to v5) with documented improvements
+        at each stage, achieving reliable top-down grasping using torso-descent vertical
+        approach.
+
+  \item \textbf{A handover skill} that detects a person via YOLO and depth sensing,
+        inserts a person collision object in MoveIt, and presents the grasped object at
+        an ergonomic handover height.
+
+  \item \textbf{A multi-layer safety system} including affordance gating, consecutive
+        failure tracking, safe-mode entry, and graceful shutdown.
+\end{enumerate}
+
+\section{Report Structure}
+
+The remainder of this report is organised as follows:
+
+\begin{description}
+  \item[Chapter~\ref{ch:sota}] reviews the state of the art in embodied AI, VLMs,
+        object detection, and mobile manipulation.
+  \item[Chapter~\ref{ch:system}] describes the complete system: hardware platform,
+        overall architecture, perception pipeline, VLM reasoning, manipulation and
+        grasping, and agent orchestration --- presented as a unified narrative that
+        follows a single command through the system.
+  \item[Chapter~\ref{ch:experiments}] presents experimental results, evaluating
+        detection speed, grasping success rate, VLM latency, and end-to-end task
+        completion.
+  \item[Chapter~\ref{ch:conclusion}] discusses findings, limitations, and comparisons
+        with related work, then concludes with contributions and future directions.
+\end{description}

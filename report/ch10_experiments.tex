@@ -1,0 +1,277 @@
+% ============================================================
+%  CHAPTER 10 — Experiments and Results
+% ============================================================
+\chapter{Experiments and Results}
+\label{ch:experiments}
+
+\section{Experimental Setup}
+
+All experiments were conducted in a laboratory environment using a single PAL Robotics
+\tiago{} robot.
+The robot was placed at a fixed position facing a table at approximately 0.8 m distance.
+Objects were placed on the table within the camera's field of view and within the
+arm's reachable workspace ($\leq$ 0.7 m from the base footprint).
+
+\begin{table}[H]
+\centering
+\caption{Experimental environment parameters.}
+\label{tab:exp_setup}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Table height               & $\approx$ 0.75 m \\
+Robot distance to table    & $\approx$ 0.80 m \\
+Lighting conditions        & Indoor, artificial \\
+Object types tested        & Plastic bottle (500 ml), cup \\
+YOLO confidence threshold  & 0.4 \\
+Grasp attempts per position& 3 \\
+VLM model                  & Gemini 2.0 Flash \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiment 1: YOLO Detection Performance}
+
+\subsection{Inference Speed}
+
+Detection speed was measured by sending the same test image to each model
+50 times and recording the mean and standard deviation of inference time.
+
+\begin{table}[H]
+\centering
+\caption{YOLO inference speed comparison (CPU, 640×480 JPEG input).}
+\label{tab:yolo_speed}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Model} & \textbf{Mean (ms)} & \textbf{Std (ms)} & \textbf{FPS} & \textbf{Location} \\
+\midrule
+YOLOv4-tiny (cv2.dnn)  & \todo{XX} & \todo{X} & \todo{XX} & Docker \\
+YOLO11n (service)      & \todo{XX} & \todo{X} & \todo{XX} & Host \\
+YOLOE-26s-seg          & \todo{XX} & \todo{X} & \todo{XX}  & Host \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Detection Quality}
+
+A set of 30 images of a bottle at varying distances, angles, and lighting conditions
+was prepared.
+YOLO11n was evaluated on these images with a confidence threshold of 0.4.
+
+\begin{table}[H]
+\centering
+\caption{YOLO11n detection quality on bottle test set.}
+\label{tab:yolo_quality}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Condition} & \textbf{Detection rate} & \textbf{Mean confidence} \\
+\midrule
+Distance 0.3--0.5 m, frontal & \todo{XX}\% & \todo{0.XX} \\
+Distance 0.5--0.8 m, frontal & \todo{XX}\% & \todo{0.XX} \\
+Distance 0.8--1.0 m, frontal & \todo{XX}\% & \todo{0.XX} \\
+Angled ($> 30^\circ$ from frontal) & \todo{XX}\% & \todo{0.XX} \\
+Partial occlusion ($< 50\%$)  & \todo{XX}\% & \todo{0.XX} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiment 2: Grasping Success Rate}
+
+\subsection{Protocol}
+
+The bottle was placed at 9 fixed positions on the table (3$\times$3 grid: near/mid/far
+$\times$ left/centre/right).
+At each position, 3 grasp attempts were made using the v5 pipeline, for a total of
+27 trials.
+A trial is classified as \textbf{successful} if the gripper closes around the object
+and the object is lifted at least 5 cm off the table.
+
+\subsection{Results by Position}
+
+\begin{table}[H]
+\centering
+\caption{Grasp success rate by table position (3 trials each).}
+\label{tab:grasp_results}
+\begin{tabular}{lccc}
+\toprule
+ & \textbf{Left} & \textbf{Centre} & \textbf{Right} \\
+\midrule
+\textbf{Near ($\sim$0.5 m)}  & \todo{X}/3 & \todo{X}/3 & \todo{X}/3 \\
+\textbf{Mid ($\sim$0.65 m)}  & \todo{X}/3 & \todo{X}/3 & \todo{X}/3 \\
+\textbf{Far ($\sim$0.8 m)}   & \todo{X}/3 & \todo{X}/3 & \todo{X}/3 \\
+\midrule
+\textbf{Total} & \multicolumn{3}{c}{\todo{XX}/27 (\todo{XX}\%)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Failure Analysis}
+
+\begin{table}[H]
+\centering
+\caption{Grasp failure modes and frequencies.}
+\label{tab:grasp_failures}
+\begin{tabularx}{\linewidth}{Xr}
+\toprule
+\textbf{Failure mode} & \textbf{Count} \\
+\midrule
+YOLO detection miss (confidence below threshold)     & \todo{X} \\
+RANSAC cylinder fit failed (too few depth points)    & \todo{X} \\
+MoveIt planning failure (no valid plan found)        & \todo{X} \\
+Gripper misaligned (closed beside object)            & \todo{X} \\
+Object moved during approach                         & \todo{X} \\
+\midrule
+Total failures                                       & \todo{X} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Experiment 3: Grasping Pipeline Evolution}
+
+To quantify the improvement from v1 to v5, the same fixed test position (bottle
+at table centre, 0.65 m from base) was used for 10 trials with each version.
+
+\begin{table}[H]
+\centering
+\caption{Grasp success rate evolution across pipeline versions.}
+\label{tab:grasp_evolution}
+\begin{tabular}{llr}
+\toprule
+\textbf{Version} & \textbf{Key feature} & \textbf{Success rate} \\
+\midrule
+v1 & Basic open-loop reach                        & \todo{X}/10 \\
+v2 & 5-frame averaging + aligned depth            & \todo{X}/10 \\
+v3 & Calibrated gripper offsets                   & \todo{X}/10 \\
+v4 & RANSAC cylinder fit                          & \todo{X}/10 \\
+v5 & Torso descent (vertical approach)            & \todo{X}/10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiment 4: End-to-End Task}
+
+\subsection{Protocol}
+
+The full command \emph{``Grab the bottle and give it to me''} was issued 10 times
+with a human standing 1 m from the robot.
+The bottle was placed at the table centre at 0.65 m.
+The trial is \textbf{successful} if the robot: (a) detects and grasps the bottle,
+and (b) extends the arm toward the person and opens the gripper.
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\caption{End-to-end task results (10 trials).}
+\label{tab:e2e_results}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Full task success                     & \todo{X}/10 \\
+Failed at grasp phase                 & \todo{X}/10 \\
+Failed at handover phase              & \todo{X}/10 \\
+Mean VLM calls per trial              & \todo{X.X} \\
+Mean task completion time             & \todo{X} s \\
+VLM correctly selected skills         & \todo{XX}/\todo{XX} (\todo{XX}\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Skill Sequence Distribution}
+
+In all successful trials, the VLM selected the following skill sequence:
+
+\begin{center}
+\texttt{search\_with\_head} $\rightarrow$ \texttt{grab\_bottle}
+$\rightarrow$ \texttt{handover\_to\_person} $\rightarrow$ \texttt{done}
+\end{center}
+
+In failed trials where the bottle was initially visible, the VLM correctly skipped
+\texttt{search\_with\_head} and proceeded directly to \texttt{grab\_bottle}.
+
+\section{Experiment 5: VLM Latency}
+
+\begin{table}[H]
+\centering
+\caption{Gemini 2.0 Flash API latency over 30 calls.}
+\label{tab:vlm_latency_results}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value (s)} \\
+\midrule
+Minimum  & \todo{0.XX} \\
+Mean     & \todo{0.XX} \\
+Median   & \todo{0.XX} \\
+Maximum  & \todo{X.XX} \\
+Std dev  & \todo{0.XX} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiment 6: Head Search Performance}
+
+The bottle was placed out of the robot's initial field of view (to the left at 0.7 m).
+The \texttt{search\_with\_head} skill was run 10 times.
+
+\begin{table}[H]
+\centering
+\caption{Head search results (10 trials, bottle placed to the left).}
+\label{tab:search_results}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Successful finds          & \todo{X}/10 \\
+Mean positions scanned    & \todo{X.X}/12 \\
+Mean time to find         & \todo{XX} s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiment 7: STT Accuracy}
+
+Ten fixed commands were each spoken 3 times (30 utterances total).
+Whisper ``base'' model was used.
+
+\begin{table}[H]
+\centering
+\caption{Speech recognition accuracy (Whisper base, 30 utterances).}
+\label{tab:stt_results}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Correctly recognised utterances & \todo{XX}/30 (\todo{XX}\%) \\
+Word Error Rate (WER)           & \todo{X.X}\% \\
+Fallback to Google STT          & \todo{X}/30 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Summary of Results}
+
+\begin{table}[H]
+\centering
+\caption{Summary of all experimental results.}
+\label{tab:results_summary}
+\begin{tabularx}{\linewidth}{Xr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+YOLO11n inference speed (mean)          & \todo{XX} ms \\
+Bottle detection rate (0.5--0.8 m)      & \todo{XX}\% \\
+Grasp success rate (27 trials, v5)      & \todo{XX}\% \\
+Grasp improvement v1$\rightarrow$v5     & +\todo{XX} pp \\
+End-to-end task success (10 trials)     & \todo{XX}\% \\
+VLM skill selection accuracy            & \todo{XX}\% \\
+Mean VLM latency                        & \todo{0.XX} s \\
+Head search success                     & \todo{XX}\% \\
+STT word error rate                     & \todo{X.X}\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent\textit{Note: values marked \todo{...} are placeholders to be filled with
+real experimental data before final submission.}

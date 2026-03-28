@@ -1,0 +1,19 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DOCKER requirements (Python 3.6, ROS Melodic inside PAL Docker image)
+# Installed automatically by docker/Dockerfile — no manual step needed.
+#
+# ROS packages (rospy, actionlib, moveit_msgs, sensor_msgs, etc.) come
+# pre-installed in the PAL base image.  Only pure-Python extras are listed here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# RANSAC cylinder fitting (reach_object_v5) + eval scripts
+scipy==1.5.4
+
+# HTTP client (VLM API, YOLO service, face service)
+requests==2.27.1
+
+# YAML config files
+pyyaml==6.0.1
+
+# Voice input (optional — only needed for microphone command mode)
+SpeechRecognition==3.9.0

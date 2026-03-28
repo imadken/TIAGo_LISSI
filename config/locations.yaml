@@ -1,0 +1,19 @@
+# Named locations in the mapped environment
+locations:
+  home:
+    x: 0.0
+    y: 0.0
+    theta: 0.0
+    description: "Robot starting position"
+
+  table:
+    x: -2.823
+    y: -1.129
+    theta: -2.460
+    description: "Table where bottles are placed"
+
+  shelf:
+    x: 3.5
+    y: -1.0
+    theta: 1.57
+    description: "Storage shelf"

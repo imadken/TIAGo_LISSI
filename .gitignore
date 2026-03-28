@@ -1,0 +1,84 @@
+# ─── Secrets ─────────────────────────────────────────────────────────────────
+.env
+
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ─── Model weights (large binaries — download on first run) ──────────────────
+*.pt
+*.ts
+*.weights
+*.onnx
+yolov3*/
+yolov4*/
+
+# ─── Site-specific SLAM maps ─────────────────────────────────────────────────
+*.pgm
+*_map.yaml
+*_map.pgm
+*.yaml.bak
+
+# ─── PAL ROS workspace (vendor packages — install via rosdep, not tracked) ───
+pal_ws/
+# Users set up pal_ws independently via PAL's Docker image or rosdep.
+# See INSTALLATION_MANUAL.md §5-6 for setup instructions.
+
+# ─── Evaluation generated data & reports ─────────────────────────────────────
+eval/data/
+eval/results/
+
+# ─── Personal / biometric data ───────────────────────────────────────────────
+data/faces/known/
+data/faces/unknown/
+data/faces/*.zip
+
+# ─── Debug / temporary images ────────────────────────────────────────────────
+tiago_*.jpg
+tiago_*.png
+/tmp/tiago_*
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+log/
+logs/
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# ─── Backup files created during development ─────────────────────────────────
+*_BACKUP.py
+*.bak
+
+# ─── LaTeX build artifacts ────────────────────────────────────────────────────
+*.aux
+*.bbl
+*.blg
+*.acn
+*.glo
+*.ist
+*.lof
+*.lot
+*.nav
+*.snm
+*.toc
+*.out
+# Note: *.log is already above; *.pdf is intentionally NOT excluded
+#       so compiled papers/report PDFs are included for readers.
+
+# ─── Face database (biometric data — do not commit) ──────────────────────────
+faces_db/
+*.pkl
+# PAL Robotics third-party packages (have their own git repos)
+src/

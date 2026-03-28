@@ -1,0 +1,44 @@
+<!--
+  CycloneDDS configuration for TIAGo ROS 2 / DDS communication.
+
+  BEFORE RUNNING: Replace the robot peer address below with your robot's IP.
+  You can also set it via the ROBOT_IP env var and regenerate with:
+    sed "s/ROBOT_IP_PLACEHOLDER/$ROBOT_IP/" cyclonedds.xml > /tmp/cyclonedds_local.xml
+    export CYCLONEDDS_URI=file:///tmp/cyclonedds_local.xml
+
+  Default peer address: 10.68.0.1  (PAL TIAGo default subnet)
+-->
+<CycloneDDS>
+  <Domain>
+    <General>
+      <!-- Disable multicast for direct point-to-point with robot -->
+      <AllowMulticast>false</AllowMulticast>
+      <MaxMessageSize>1400B</MaxMessageSize>
+      <!-- Set the network interface used to reach the robot.
+           Change 'wlo1' to your actual WiFi or Ethernet interface name
+           (run: ip link show) -->
+      <Interfaces>
+        <NetworkInterface name="wlo1" priority="1"/>
+        <NetworkInterface name="lo" priority="0"/>
+      </Interfaces>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <!-- Replace with your robot's IP address -->
+        <Peer Address="10.68.0.1"/>
+        <Peer Address="localhost"/>
+      </Peers>
+      <MaxAutoParticipantIndex>500</MaxAutoParticipantIndex>
+    </Discovery>
+    <Internal>
+      <Watermarks>
+        <WhcHigh>2000kB</WhcHigh>
+      </Watermarks>
+    </Internal>
+    <Tracing>
+      <Verbosity>config</Verbosity>
+      <OutputFile>${HOME}/.ros/log/cdds.log</OutputFile>
+    </Tracing>
+  </Domain>
+</CycloneDDS>

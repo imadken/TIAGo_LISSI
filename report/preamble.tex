@@ -1,0 +1,168 @@
+% ============================================================
+%  PREAMBLE — shared by main.tex
+% ============================================================
+
+% ---- Encoding & language ------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+
+% ---- Page layout --------------------------------------------
+\usepackage{geometry}
+\geometry{a4paper, left=2.5cm, right=2.5cm, top=2.8cm, bottom=2.8cm}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{emptypage}   % suppresses headers/footers on blank verso pages
+\usepackage{pdflscape}   % landscape pages for large diagrams
+
+% ---- Fonts --------------------------------------------------
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ---- Math ---------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{bm}
+
+% ---- Graphics -----------------------------------------------
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ---- Tables -------------------------------------------------
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+
+% ---- Lists --------------------------------------------------
+\usepackage{enumitem}
+\setlist[itemize]{noitemsep, topsep=4pt}
+\setlist[enumerate]{noitemsep, topsep=4pt}
+
+% ---- Colours ------------------------------------------------
+\usepackage{xcolor}
+\definecolor{darkblue}{RGB}{0,51,102}
+\definecolor{lightblue}{RGB}{173,216,230}
+\definecolor{palgreen}{RGB}{0,160,80}
+\definecolor{codegray}{RGB}{248,248,248}
+\definecolor{codegreen}{RGB}{0,128,0}
+\definecolor{codered}{RGB}{170,0,0}
+\definecolor{codepurple}{RGB}{120,0,150}
+
+% ---- Code listings ------------------------------------------
+\usepackage{listings}
+\lstset{
+  backgroundcolor=\color{codegray},
+  commentstyle=\color{codegreen}\itshape,
+  keywordstyle=\color{darkblue}\bfseries,
+  stringstyle=\color{codered},
+  numberstyle=\tiny\color{gray},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  captionpos=b,
+  numbers=left,
+  numbersep=8pt,
+  showstringspaces=false,
+  tabsize=2,
+  frame=single,
+  rulecolor=\color{gray!40},
+  xleftmargin=15pt,
+  framexleftmargin=15pt,
+  extendedchars=true,
+  literate=
+    {—}{{---}}1
+    {→}{{->}}1
+    {←}{{<-}}1
+    {…}{{...}}3
+    {é}{{\'e}}1
+    {è}{{\`e}}1
+    {à}{{\`a}}1
+}
+\lstdefinelanguage{JSON}{
+  morestring=[b]",
+  literate=*{:}{{\textcolor{darkblue}{:}}}{1}
+            {,}{{\textcolor{darkblue}{,}}}{1}
+            {\{}{{\textcolor{darkblue}{\{}}}{1}
+            {\}}{{\textcolor{darkblue}{\}}}}{1},
+}
+\lstdefinelanguage{bash}{
+  morekeywords={sudo,apt,pip,python3,docker,rosrun,rostopic,source,export,cd},
+  morestring=[b]",
+  morestring=[b]',
+  morecomment=[l]{\#},
+  sensitive=false,
+}
+
+% ---- TikZ ---------------------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit,
+                calc, decorations.pathreplacing, backgrounds}
+
+\tikzset{
+  box/.style={rectangle, rounded corners=4pt, draw=darkblue, thick,
+              fill=lightblue!35, minimum width=3.6cm, minimum height=0.8cm,
+              align=center, font=\small},
+  sbox/.style={rectangle, rounded corners=3pt, draw=palgreen, thick,
+               fill=palgreen!10, minimum width=2.8cm, minimum height=0.7cm,
+               align=center, font=\small},
+  arr/.style={-{Stealth[length=6pt]}, thick, draw=darkblue},
+  pstep/.style={rectangle, rounded corners=3pt, draw=darkblue, thick,
+               fill=lightblue!30, minimum width=8cm, minimum height=0.7cm,
+               align=left, font=\small, text width=7.5cm},
+}
+
+% ---- Algorithms ---------------------------------------------
+\usepackage[ruled, vlined, linesnumbered]{algorithm2e}
+\SetAlFnt{\small}
+
+% ---- Framed boxes -------------------------------------------
+\usepackage{mdframed}
+\mdfdefinestyle{promptbox}{
+  backgroundcolor=codegray,
+  linecolor=gray!50,
+  linewidth=0.8pt,
+  innerleftmargin=10pt,
+  innerrightmargin=10pt,
+  innertopmargin=8pt,
+  innerbottommargin=8pt,
+  roundcorner=4pt,
+}
+
+% ---- Header / Footer ----------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small TIAGo Embodied AI Agent}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- Hyperref (load last) -----------------------------------
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=darkblue,
+  citecolor=darkblue,
+  urlcolor=darkblue,
+  pdftitle={Vision-Language-Action Agent for TIAGo},
+  pdfauthor={},
+  bookmarksnumbered=true,
+}
+
+% ---- Acronyms -----------------------------------------------
+\usepackage[acronym, toc, nonumberlist]{glossaries}
+\makeglossaries
+
+% ---- Custom commands ----------------------------------------
+\newcommand{\eg}{\textit{e.g.,}\ }
+\newcommand{\ie}{\textit{i.e.,}\ }
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\tiago}{\textsc{TIAGo}}
+\newcommand{\ros}{\textsc{ROS}}
+\newcommand{\yolo}{\textsc{YOLO}}
+\newcommand{\vla}{VLA}
+\newcommand{\vlm}{VLM}
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
