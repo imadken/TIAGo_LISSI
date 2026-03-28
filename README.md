@@ -78,31 +78,8 @@ The agent accepts natural-language commands, reasons about the 3D scene using a 
 
 ## Quick Start
 
-```bash
-# 1. Clone
-git clone https://github.com/your-org/tiago-embodied-agent.git
-cd tiago-embodied-agent
 
-# 2. Python dependencies (host — for YOLO service and eval scripts)
-pip install -r requirements.txt
-
-# 3. API keys
-cp .env.example .env
-# Edit .env with your EDENAI_API_KEY and GROQ_API_KEY
-
-# 4. Download YOLO weights (auto-downloads on first import)
-python3 -c "from ultralytics import YOLO; YOLO('yoloe-26s-seg.pt')"
-
-# 5. Start the YOLO detection service
-python3 yolo_service.py &
-
-# 6. Configure network and launch agent
-export ROBOT_IP=<your-robot-ip>        # e.g. 192.168.1.100
-export HOST_IP=<your-workstation-ip>   # e.g. 192.168.1.50
-./run_agent.sh
-```
-
-For the full ROS Docker setup required for live robot experiments, see [INSTALLATION_MANUAL.md](INSTALLATION_MANUAL.md).
+For the full ROS Docker setup required for live robot experiments, see [USER_MANUAL_COMPLETE.md](USER_MANUAL_COMPLETE.md).
 
 ---
 
