@@ -79,7 +79,22 @@ The agent accepts natural-language commands, reasons about the 3D scene using a 
 ## Quick Start
 
 
-For the full ROS Docker setup required for live robot experiments, see [USER_MANUAL_COMPLETE.md](USER_MANUAL_COMPLETE.md).
+1. Install workstation prerequisites (Python 3.10+, Docker) and the ROS container following [docs/INSTALLATION_MANUAL.md](docs/INSTALLATION_MANUAL.md). Then install Python dependencies:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. Copy `.env.example` to `.env`, then add your `EDENAI_API_KEY` and `GROQ_API_KEY`. Override network variables (`ROBOT_IP`, `HOST_IP`, `ROBOT_HOSTNAME`) as needed.
+3. Start perception services when required:
+   - YOLO open-vocabulary detector — see [docs/YOLO_WORLD_SETUP.md](docs/YOLO_WORLD_SETUP.md)
+   - CLIP / re-ranking service — see [docs/CLIP_SETUP.md](docs/CLIP_SETUP.md)
+4. Launch the agent:
+   ```bash
+   ./run_agent.sh
+   ```
+
+For the full ROS Docker setup required for live robot experiments, see [docs/USER_MANUAL_COMPLETE.md](docs/USER_MANUAL_COMPLETE.md).
 
 ---
 
@@ -157,50 +172,32 @@ See [eval/README.md](eval/README.md) for full details.
 
 ```
 tiago-embodied-agent/
-├── embodied_agent.py                # Main agent loop
-├── vlm_reasoner.py                  # Gemini 2.0 Flash VLM client
-├── state_manager.py                 # Robot state + symbolic rule engine
-├── perception_manager_v2.py         # RGB-D perception + 3D projection
-├── yolo_service.py                  # HTTP YOLO detection microservice (port 5001)
-├── face_manager.py                  # Face recognition HTTP client
-├── reach_object_v5_torso_descent_working.py  # Grasping pipeline (subprocess)
-│
+├── docs/                            # All setup guides, manuals, and reports
+│   ├── README.md                    # Documentation index
+│   ├── INSTALLATION_MANUAL.md       # Workstation + ROS container setup
+│   ├── USER_MANUAL_COMPLETE.md      # Full live-robot workflow
+│   ├── YOLO_WORLD_SETUP.md          # Open-vocabulary detector service
+│   ├── CLIP_SETUP.md                # CLIP / re-ranking service
+│   ├── MAP_INTEGRATION_GUIDE.md     # Integrating external maps
+│   ├── MAPPING_GUIDE.md             # SLAM autonomous mapping
+│   ├── SAFETY_FEATURES.md           # Safety system details
+│   ├── GRASPING_IMPROVEMENTS.md     # Grasp pipeline technical notes
+│   ├── IMPROVEMENTS_SUMMARY.md      # Release highlights and pointers
+│   ├── PROMPTS.md                   # VLM prompt engineering
+│   └── TECHNICAL_REPORT.md          # System architecture & methods
 ├── skills/                          # Modular skill library
-│   ├── base_skill.py               # Abstract base class
-│   ├── grab_bottle.py              # Grasping skill
-│   ├── handover.py                 # Handover to person
-│   ├── search_with_head.py         # Head scan search
-│   ├── push_aside.py               # Push blocking objects
-│   ├── navigate_to.py              # Base navigation
-│   └── simple_motions.py           # Home, wave, open/close hand
-│
-├── eval/                            # Evaluation suite
-│   ├── eval_detection.py
-│   ├── eval_depth_refine.py
-│   ├── eval_statemanager.py
-│   ├── eval_face.py
-│   ├── eval_latency.py
-│   ├── eval_grasp_recorder.py
-│   ├── eval_search_recorder.py
-│   └── report.py
-│
-├── config/
-│   └── locations.yaml               # Named navigation waypoints
-│
+├── eval/                            # Evaluation scripts and metrics
+├── config/                          # Navigation waypoints and robot config
+├── docker/                          # Container and deployment assets
+├── report/                          # LaTeX report sources and figures
+├── .env.example                     # Template for API keys and network overrides
 ├── run_agent.sh                     # Agent launcher (configurable via env vars)
-├── eval_setup.sh                    # Eval environment setup
-├── cyclonedds.xml                   # CycloneDDS peer config
-├── grasp_offsets.yaml               # Calibrated grasp offsets
-├── .env.example                     # API key template
-│
-└── docs/
-    ├── INSTALLATION_MANUAL.md       # Full setup guide
-    ├── TECHNICAL_REPORT.md          # System architecture & methods
-    ├── MAPPING_GUIDE.md             # SLAM autonomous mapping
-    ├── SAFETY_FEATURES.md           # Safety system details
-    ├── GRASPING_IMPROVEMENTS.md     # Grasp pipeline technical notes
-    ├── PROMPTS.md                   # VLM prompt engineering
-    └── eval/README.md               # Evaluation methodology
+├── eval_setup.sh                    # Eval environment setup helper
+├── embodied_agent.py                # Main agent loop
+├── perception_manager_v2.py         # RGB-D perception + 3D projection
+├── state_manager.py                 # Robot state + symbolic rule engine
+├── vlm_reasoner.py                  # Gemini 2.0 Flash VLM client
+└── yolo_service.py                  # HTTP YOLO detection microservice (port 5001)
 ```
 
 ---
@@ -209,12 +206,18 @@ tiago-embodied-agent/
 
 | Document | Description |
 |----------|-------------|
-| [INSTALLATION_MANUAL.md](INSTALLATION_MANUAL.md) | Complete setup guide from zero |
-| [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) | Full system architecture and methods |
-| [MAPPING_GUIDE.md](MAPPING_GUIDE.md) | Autonomous SLAM mapping workflow |
-| [SAFETY_FEATURES.md](SAFETY_FEATURES.md) | Safety system details |
-| [GRASPING_IMPROVEMENTS.md](GRASPING_IMPROVEMENTS.md) | Grasping pipeline technical notes |
-| [PROMPTS.md](PROMPTS.md) | VLM prompt engineering reference |
+| [docs/README.md](docs/README.md) | Index of all documentation |
+| [docs/INSTALLATION_MANUAL.md](docs/INSTALLATION_MANUAL.md) | Complete setup guide from zero |
+| [docs/USER_MANUAL_COMPLETE.md](docs/USER_MANUAL_COMPLETE.md) | Full live-robot workflow and ROS Docker setup |
+| [docs/YOLO_WORLD_SETUP.md](docs/YOLO_WORLD_SETUP.md) | YOLO open-vocabulary detection service |
+| [docs/CLIP_SETUP.md](docs/CLIP_SETUP.md) | CLIP / re-ranking service setup |
+| [docs/MAP_INTEGRATION_GUIDE.md](docs/MAP_INTEGRATION_GUIDE.md) | Using pre-built maps inside the agent |
+| [docs/MAPPING_GUIDE.md](docs/MAPPING_GUIDE.md) | Autonomous SLAM mapping workflow |
+| [docs/SAFETY_FEATURES.md](docs/SAFETY_FEATURES.md) | Safety system details |
+| [docs/GRASPING_IMPROVEMENTS.md](docs/GRASPING_IMPROVEMENTS.md) | Grasping pipeline technical notes |
+| [docs/IMPROVEMENTS_SUMMARY.md](docs/IMPROVEMENTS_SUMMARY.md) | Release highlights and links |
+| [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md) | Full system architecture and methods |
+| [docs/PROMPTS.md](docs/PROMPTS.md) | VLM prompt engineering reference |
 | [eval/README.md](eval/README.md) | Evaluation methodology and metrics |
 
 ---

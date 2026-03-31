@@ -52,7 +52,7 @@ if docker inspect "$DOCKER_CONTAINER" > /dev/null 2>&1; then
     fi
 else
     echo "[✗] Container '$DOCKER_CONTAINER' not found"
-    echo "    Create it with (see INSTALLATION_MANUAL.md §4 for details):"
+    echo "    Create it with (see docs/INSTALLATION_MANUAL.md §4 for details):"
     echo ""
     echo "    docker run -dit --name $DOCKER_CONTAINER \\"
     echo "      --net=host \\"
