@@ -134,7 +134,7 @@ plan = vlm.plan_actions(user_command, grounded, scene_desc, state, skills)
 
 ## ✅ 4. CLIP Open-Vocabulary Detection (COMPLETED - Pending Install)
 
-**Files:** `clip_classifier.py` (new), `perception_manager.py` (updated)
+**Files:** `tiago_lissi/detection/clip_classifier.py` (new), `tiago_lissi/perception/perception_manager_v2.py` (updated)
 
 **Solution:** CLIP-based classification (Python 3.6 compatible)
 

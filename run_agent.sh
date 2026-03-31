@@ -44,4 +44,5 @@ echo "[✓] ROS_IP=$ROS_IP"
 
 # ── Run agent ──────────────────────────────────────────────────────────────────
 cd "$SCRIPT_DIR"
-python3 embodied_agent.py
+export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH}"
+python3 -m tiago_lissi.agent.embodied_agent

@@ -298,7 +298,7 @@ python3 -c "from ultralytics import YOLO; YOLO('yoloe-26s-seg.pt')"
 ### 7.2 Start the Service
 
 ```bash
-python3 yolo_service.py
+python3 -m tiago_lissi.services.yolo_service
 ```
 
 Expected output:
@@ -316,12 +316,12 @@ curl http://localhost:5001/health
 # {"status": "ok", "model": "yoloe-26s-seg", "open_vocab": true, ...}
 ```
 
-To change the port, edit `yolo_service.py` line ~40 (`PORT = 5001`) or set `YOLO_PORT` env var.
+To change the port, edit `tiago_lissi/services/yolo_service.py` line ~40 (`PORT = 5001`) or set `YOLO_PORT` env var.
 
 ### 7.4 Run as Background Service (optional)
 
 ```bash
-nohup python3 yolo_service.py > /tmp/yolo_service.log 2>&1 &
+nohup python3 -m tiago_lissi.services.yolo_service > /tmp/yolo_service.log 2>&1 &
 echo "YOLO service PID: $!"
 ```
 
@@ -335,7 +335,7 @@ Face recognition enables the agent to greet known persons by name and register n
 
 ```bash
 # On the host
-python3 face_recognition_service.py
+python3 -m tiago_lissi.services.face_recognition_service
 # Runs on port 5002 by default
 ```
 
@@ -398,7 +398,7 @@ docker exec -it tiago_ros bash -c "
   export ROS_MASTER_URI=http://${ROBOT_IP}:11311 &&
   export ROS_IP=${HOST_IP} &&
   cd /workspace &&
-  python3 reach_object_v5_torso_descent_working.py --target bottle
+  python3 tiago_lissi/manipulation/reach_object_v5_torso_descent_working.py --target bottle
 "
 ```
 
@@ -593,7 +593,7 @@ You can also set `TARGET_DESCRIPTION` explicitly:
 
 ```bash
 TARGET_DESCRIPTION="the small water bottle, not the large one" \
-python3 reach_object_v5_torso_descent_working.py --target bottle
+python3 tiago_lissi/manipulation/reach_object_v5_torso_descent_working.py --target bottle
 ```
 
 ### MoveIt planning failure
@@ -630,7 +630,7 @@ Since the container uses `--network=host`, `localhost:5001` inside Docker **is**
 docker exec tiago_ros bash -c "python3 -c \"import urllib.request; print(urllib.request.urlopen('http://localhost:5001/health').read())\""
 ```
 
-If this fails, the YOLO service is not running on the host. Start it with `python3 yolo_service.py`.
+If this fails, the YOLO service is not running on the host. Start it with `python3 -m tiago_lissi.services.yolo_service`.
 
 ### `ModuleNotFoundError: No module named 'cv2'` (inside Docker)
 

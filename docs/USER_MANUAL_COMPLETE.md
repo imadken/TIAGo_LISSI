@@ -301,7 +301,7 @@ You need **3-4 terminal windows** open simultaneously.
 source venv/bin/activate
 
 # Start YOLO HTTP server
-python3 yolo_service.py
+python3 -m tiago_lissi.services.yolo_service
 ```
 
 **Expected output (after ~30 seconds):**
@@ -495,7 +495,7 @@ docker rm -f tiago_ros
 ## "YOLO service won't start"
 
 ```
-python3 yolo_service.py
+python3 -m tiago_lissi.services.yolo_service
 ModuleNotFoundError: No module named 'ultralytics'
 ```
 
@@ -509,7 +509,7 @@ source venv/bin/activate
 pip install --upgrade ultralytics opencv-python
 
 # Try again
-python3 yolo_service.py
+python3 -m tiago_lissi.services.yolo_service
 ```
 
 ---
@@ -651,7 +651,7 @@ Result reported to user
 ```bash
 # Terminal 1: YOLO service (Python 3.10 on host)
 source venv/bin/activate
-python3 yolo_service.py
+python3 -m tiago_lissi.services.yolo_service
 
 # Terminal 2: Docker container (Python 3.6 + ROS 1)
 source ~/.bashrc_tiago
@@ -682,11 +682,11 @@ points:
 tiago-embodied-agent/
 ├── embodied_agent.py           ← Main entry point (Python 3.6)
 ├── vlm_reasoner.py             ← LLM integration (Python 3.6)
-├── perception_manager_v2.py    ← Vision (Python 3.6)
+├── tiago_lissi/perception/perception_manager_v2.py    ← Vision (Python 3.6)
 ├── state_manager.py            ← Scene graph (Python 3.6)
-├── face_manager.py             ← Face recognition (Python 3.6)
-├── yolo_service.py             ← HTTP YOLO (Python 3.10 on host)
-├── face_recognition_service.py ← HTTP faces (Python 3.10 on host)
+├── tiago_lissi/services/face_manager.py             ← Face recognition (Python 3.6)
+├── tiago_lissi/services/yolo_service.py             ← HTTP YOLO (Python 3.10 on host)
+├── tiago_lissi/services/face_recognition_service.py ← HTTP faces (Python 3.10 on host)
 ├── skills/
 │  ├── grab_bottle.py
 │  ├── search_with_head.py

@@ -20,8 +20,7 @@ import message_filters
 import requests
 from image_geometry import PinholeCameraModel
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from vlm_reasoner import VLMReasoner
+from tiago_lissi.agent.vlm_reasoner import VLMReasoner
 
 from sensor_msgs.msg import Image, CameraInfo, JointState
 from geometry_msgs.msg import PoseStamped, Pose, Quaternion
@@ -114,7 +113,8 @@ class BottleReacher:
         # Grasp offsets — loaded from grasp_offsets.yaml if it exists,
         # then overridden by env vars (set by calibrate_grasp_interactive.py)
         import yaml as _yaml, os as _os
-        _offsets_file = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'grasp_offsets.yaml')
+        _repo_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        _offsets_file = _os.path.join(_repo_root, 'grasp_offsets.yaml')
         if _os.path.exists(_offsets_file):
             with open(_offsets_file) as _f:
                 _off = _yaml.safe_load(_f)

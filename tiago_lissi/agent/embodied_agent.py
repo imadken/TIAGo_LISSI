@@ -5,8 +5,6 @@ Main control loop integrating VLM reasoning, perception, and skills
 WITH COMPREHENSIVE SAFETY FEATURES
 """
 
-import os
-import sys
 import json
 import signal
 import numpy as np
@@ -18,21 +16,18 @@ from typing import Dict, List, Any
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
-# Add workspace to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from pal_interaction_msgs.msg import TtsAction, TtsGoal
 
-from vlm_reasoner import VLMReasoner
-from perception_manager_v2 import PerceptionManager
-from state_manager import StateManager
-from face_manager import FaceManager
-from skills.base_skill import BaseSkill
-from skills.grab_bottle import GrabBottleSkill  # file kept as grab_bottle.py, skill name is grab_object
-from skills.simple_motions import GoHomeSkill, WaveSkill, OpenHandSkill, CloseHandSkill
-from skills.search_with_head import SearchWithHeadSkill
-from skills.handover import HandoverSkill
-from skills.push_aside import PushAsideSkill
+from tiago_lissi.agent.vlm_reasoner import VLMReasoner
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
+from tiago_lissi.agent.state_manager import StateManager
+from tiago_lissi.services.face_manager import FaceManager
+from tiago_lissi.skills.base_skill import BaseSkill
+from tiago_lissi.skills.grab_bottle import GrabBottleSkill  # file kept as grab_bottle.py, skill name is grab_object
+from tiago_lissi.skills.simple_motions import GoHomeSkill, WaveSkill, OpenHandSkill, CloseHandSkill
+from tiago_lissi.skills.search_with_head import SearchWithHeadSkill
+from tiago_lissi.skills.handover import HandoverSkill
+from tiago_lissi.skills.push_aside import PushAsideSkill
 
 
 class EmbodiedAgent:

@@ -71,8 +71,9 @@ try:
 except ImportError:
     print('[warn] rospy not available — live camera feed disabled')
 
-REACH_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             'reach_object_v5_torso_descent_working.py')
+REACH_SCRIPT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'tiago_lissi', 'manipulation', 'reach_object_v5_torso_descent_working.py')
 
 # YOLO service (python3 yolo_service.py) — reachable via localhost since
 # the Docker container runs with --network=host.

@@ -28,7 +28,7 @@ yolov4*/
 # ─── PAL ROS workspace (vendor packages — install via rosdep, not tracked) ───
 pal_ws/
 # Users set up pal_ws independently via PAL's Docker image or rosdep.
-# See INSTALLATION_MANUAL.md §5-6 for setup instructions.
+# See docs/INSTALLATION_MANUAL.md §5-6 for setup instructions.
 
 # ─── Evaluation generated data & reports ─────────────────────────────────────
 eval/data/

@@ -30,7 +30,7 @@ python3 test_yolo_world.py
 ### In Your Code
 
 ```python
-from perception_manager import PerceptionManager
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
 
 # Initialize with YOLO-World
 perception = PerceptionManager(use_yolo_world=True)

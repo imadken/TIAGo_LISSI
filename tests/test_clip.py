@@ -7,7 +7,7 @@ Run this to verify CLIP installation and functionality
 import rospy
 import cv2
 import numpy as np
-from perception_manager import PerceptionManager
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
 
 
 def test_clip_detection():

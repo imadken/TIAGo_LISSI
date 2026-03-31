@@ -4,17 +4,12 @@ Search for Object by Moving Head
 Scans surroundings by moving head to different positions
 """
 
-import os
-import sys
 import rospy
 import actionlib
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-# Add workspace to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from skills.base_skill import BaseSkill
+from tiago_lissi.skills.base_skill import BaseSkill
 
 
 class SearchWithHeadSkill(BaseSkill):

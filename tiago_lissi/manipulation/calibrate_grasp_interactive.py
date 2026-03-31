@@ -19,11 +19,12 @@ import os
 import sys
 import subprocess
 
-OFFSETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'grasp_offsets.yaml')
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OFFSETS_FILE = os.path.join(_REPO_ROOT, 'grasp_offsets.yaml')
 STEP = 0.01  # 1cm per adjustment
 
 # Load .env so EDENAI_API_KEY is available to subprocesses
-_env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+_env_file = os.path.join(_REPO_ROOT, '.env')
 if os.path.exists(_env_file):
     with open(_env_file) as _f:
         for _line in _f:
@@ -96,7 +97,7 @@ def run_grasp(dx, dy, dz, target='bottle', description=''):
     env['GRASP_DY'] = str(dy)
     env['GRASP_DZ'] = str(dz)
 
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+    script = os.path.join(_REPO_ROOT, 'tiago_lissi', 'manipulation',
                           'reach_object_v5_torso_descent_working.py')
 
     cmd = ['python3', script, '--target', target]
