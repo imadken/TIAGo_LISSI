@@ -96,8 +96,9 @@ def recognize():
     """
     try:
         rgb = _decode_jpeg(request.data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    except Exception:
+        log.exception("Failed to decode /recognize payload")
+        return jsonify({"error": "invalid image data"}), 400
 
     # Locate faces — use 'hog' model (fast, CPU-only); swap to 'cnn' for GPU
     locations = face_recognition.face_locations(rgb, model="hog")
@@ -170,8 +171,9 @@ def register():
 
     try:
         rgb = _decode_jpeg(raw)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception:
+        log.exception("Failed to decode /register payload")
+        return jsonify({"success": False, "error": "invalid image data"}), 400
 
     locations = face_recognition.face_locations(rgb, model="hog")
     if not locations:
