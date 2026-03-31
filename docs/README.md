@@ -2,6 +2,8 @@
 
 Use the guides below for setup, operations, and reference:
 
+- **Code layout:** All Python modules live under `tiago_lissi/` (agent, perception, navigation, detection, manipulation, services, visualization, tools, and skills). CLI helpers and tests are in `tests/`.
+
 - **INSTALLATION_MANUAL.md** — Workstation prerequisites and ROS container setup.
 - **USER_MANUAL_COMPLETE.md** — End-to-end workflow for running on the live TIAGo robot.
 - **YOLO_WORLD_SETUP.md** — Open-vocabulary YOLO detector service (HTTP microservice).

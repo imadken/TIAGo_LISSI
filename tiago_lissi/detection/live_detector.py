@@ -12,7 +12,7 @@ Run inside Docker:
     source /opt/ros/melodic/setup.bash &&
     source /workspace/pal_ws/devel/setup.bash &&
     cd /workspace &&
-    python3 live_detector.py"
+    python3 -m tiago_lissi.detection.live_detector"
 
 Then open http://localhost:8081
 """

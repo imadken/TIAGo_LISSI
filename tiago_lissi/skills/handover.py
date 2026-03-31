@@ -23,7 +23,7 @@ from shape_msgs.msg import SolidPrimitive
 from std_srvs.srv import Empty as EmptySrv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from skills.base_skill import BaseSkill
+from tiago_lissi.skills.base_skill import BaseSkill
 
 
 # Height (m above ground) at which to present the object for handover

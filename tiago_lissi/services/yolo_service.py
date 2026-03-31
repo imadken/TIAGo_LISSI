@@ -5,11 +5,11 @@ Runs on the HOST (Python 3.10) and serves detections over HTTP on port 5001.
 The Docker agent (Python 3.6) calls this instead of running YOLOv4-tiny locally.
 
 Usage:
-    python3 yolo_service.py                          # YOLOE-26s (open-vocab, recommended)
-    python3 yolo_service.py --model yoloe-26s-seg    # same, explicit
-    python3 yolo_service.py --model yoloe-26m-seg    # larger, more accurate
-    python3 yolo_service.py --model yoloe-26s-seg-pf # prompt-free, 4585 classes, no CLIP
-    python3 yolo_service.py --model yolo11n          # fixed 80 COCO classes, fastest
+    python3 -m tiago_lissi.services.yolo_service                          # YOLOE-26s (open-vocab, recommended)
+    python3 -m tiago_lissi.services.yolo_service --model yoloe-26s-seg    # same, explicit
+    python3 -m tiago_lissi.services.yolo_service --model yoloe-26m-seg    # larger, more accurate
+    python3 -m tiago_lissi.services.yolo_service --model yoloe-26s-seg-pf # prompt-free, 4585 classes, no CLIP
+    python3 -m tiago_lissi.services.yolo_service --model yolo11n          # fixed 80 COCO classes, fastest
 
 API:
     POST /detect

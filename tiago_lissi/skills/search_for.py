@@ -3,16 +3,11 @@
 Search For Object Skill - Navigate to waypoints to find objects
 """
 
-import os
-import sys
 import rospy
 from typing import Dict, Any
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from skills.base_skill import BaseSkill
-from navigation_client import NavigationClient
+from tiago_lissi.skills.base_skill import BaseSkill
+from tiago_lissi.navigation.navigation_client import NavigationClient
 
 
 class SearchForSkill(BaseSkill):

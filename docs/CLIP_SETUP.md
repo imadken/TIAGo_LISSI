@@ -62,7 +62,7 @@ python3 -c "import clip; print('CLIP installed successfully')"
 Update your code to use CLIP:
 
 ```python
-from perception_manager import PerceptionManager
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
 
 # Initialize with CLIP enabled
 perception = PerceptionManager(use_clip=True)

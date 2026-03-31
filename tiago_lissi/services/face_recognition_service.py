@@ -12,7 +12,7 @@ GET  /persons           → {"persons": ["Alice", ...]}
 POST /forget            → form: name=<str>  → {"success": bool}
 
 Start with:
-    python3 face_recognition_service.py
+    python3 -m tiago_lissi.services.face_recognition_service
 """
 
 import os

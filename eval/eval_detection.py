@@ -113,7 +113,7 @@ def evaluate(image_dir: str, classes: list, use_vlm=False, conf_thresh=0.25):
     model = YOLO(YOLO_WEIGHTS) if YOLO_AVAILABLE else None
     vlm = None
     if use_vlm:
-        from vlm_reasoner import VLMReasoner
+        from tiago_lissi.agent.vlm_reasoner import VLMReasoner
         vlm = VLMReasoner()
 
     results = []

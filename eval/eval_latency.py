@@ -48,7 +48,7 @@ def make_test_image(h=480, w=640):
 
 def measure_vlm(n: int) -> list:
     try:
-        from vlm_reasoner import VLMReasoner
+        from tiago_lissi.agent.vlm_reasoner import VLMReasoner
         vlm = VLMReasoner()
     except Exception as e:
         print(f'[skip] VLM not available: {e}')

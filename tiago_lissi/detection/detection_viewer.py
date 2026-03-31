@@ -7,7 +7,7 @@ Shows YOLO detections and optional CLIP classifications with bounding boxes
 import rospy
 import cv2
 import argparse
-from perception_manager import PerceptionManager
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
 
 
 def main():

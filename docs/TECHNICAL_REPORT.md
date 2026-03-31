@@ -24,7 +24,7 @@ The system is structured as a perception-reason-act loop executing at human inte
                              │
                              ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  PERCEIVE  (perception_manager_v2.py)                                    │
+│  PERCEIVE  (tiago_lissi/perception/perception_manager_v2.py)             │
 │  · YOLO open-vocab detections via HTTP service                           │
 │  · 3D position: depth ROI → back-project via camera intrinsics + TF     │
 │  · Face recognition enrichment (HTTP microservice, port 5002)           │
@@ -76,7 +76,7 @@ The Xtion Pro Live provides synchronized RGB and registered depth at 30 Hz (640�
 
 ### 2.2 Open-Vocabulary Object Detection (YOLO Service)
 
-A dedicated HTTP microservice (`yolo_service.py`, port 5001) runs on the host machine (Python 3.10) and serves detection results to the Docker-based agent (Python 3.6 / ROS Melodic). This split avoids Python version conflicts between ROS Melodic and modern ML libraries.
+A dedicated HTTP microservice (`tiago_lissi/services/yolo_service.py`, port 5001) runs on the host machine (Python 3.10) and serves detection results to the Docker-based agent (Python 3.6 / ROS Melodic). This split avoids Python version conflicts between ROS Melodic and modern ML libraries.
 
 - **Model:** `yoloe-26s-seg` — open-vocabulary YOLO-E with segmentation
 - **Class specification:** `X-Classes` HTTP header (comma-separated text prompts)
@@ -252,7 +252,7 @@ This chain ensures that the agent's high-level reasoning ("the small bottle, whi
 
 ## 5. Grasping Pipeline
 
-The grasping pipeline runs as a subprocess (`reach_object_v5_torso_descent_working.py`) to isolate ROS message handling and prevent state corruption in the main agent loop.
+The grasping pipeline runs as a subprocess (`tiago_lissi/manipulation/reach_object_v5_torso_descent_working.py`) to isolate ROS message handling and prevent state corruption in the main agent loop.
 
 ### 5.1 Workflow
 

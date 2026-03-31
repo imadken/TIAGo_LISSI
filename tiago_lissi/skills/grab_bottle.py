@@ -22,7 +22,8 @@ class GrabBottleSkill(BaseSkill):
         # Default to workspace directory
         if reach_object_script is None:
             workspace_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            reach_object_script = os.path.join(workspace_dir, 'reach_object_v5_torso_descent_working.py')
+            reach_object_script = os.path.join(
+                workspace_dir, 'manipulation', 'reach_object_v5_torso_descent_working.py')
 
         self.reach_object_script = reach_object_script
 

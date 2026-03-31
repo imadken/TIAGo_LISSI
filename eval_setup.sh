@@ -85,7 +85,7 @@ echo "   python3 eval_search_recorder.py --target bottle --trials 10"
 echo ""
 echo " Face recognition service (run on host, port 5002):"
 echo "   cd $WORKSPACE"
-echo "   python3 face_manager.py &"
+echo "   python3 -m tiago_lissi.services.face_manager &"
 echo "   python3 eval/eval_face.py --demo"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 

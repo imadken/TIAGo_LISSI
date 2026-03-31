@@ -6,7 +6,7 @@ Quick test to verify YOLO-World works with TIAGo
 
 import rospy
 import cv2
-from perception_manager import PerceptionManager
+from tiago_lissi.perception.perception_manager_v2 import PerceptionManager
 
 
 def test_yolo_world():

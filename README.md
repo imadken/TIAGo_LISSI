@@ -89,7 +89,7 @@ The agent accepts natural-language commands, reasons about the 3D scene using a 
 3. Start perception services when required:
    - YOLO open-vocabulary detector — see [docs/YOLO_WORLD_SETUP.md](docs/YOLO_WORLD_SETUP.md)
    - CLIP / re-ranking service — see [docs/CLIP_SETUP.md](docs/CLIP_SETUP.md)
-4. Launch the agent:
+4. Launch the agent (module path reflects new package layout):
    ```bash
    ./run_agent.sh
    ```
@@ -185,19 +185,24 @@ tiago-embodied-agent/
 │   ├── IMPROVEMENTS_SUMMARY.md      # Release highlights and pointers
 │   ├── PROMPTS.md                   # VLM prompt engineering
 │   └── TECHNICAL_REPORT.md          # System architecture & methods
-├── skills/                          # Modular skill library
+├── tiago_lissi/                     # Python package (code grouped by domain)
+│   ├── agent/                       # Main agent loop + VLM reasoning + state
+│   ├── perception/                  # RGB-D perception manager
+│   ├── detection/                   # YOLO / CLIP detection viewers and tools
+│   ├── navigation/                  # Base/torso navigation helpers
+│   ├── manipulation/                # Grasping and calibration pipelines
+│   ├── services/                    # HTTP services (YOLO, face recognition)
+│   ├── visualization/               # Web/GUI visualization helpers
+│   ├── tools/                       # Utility scripts (e.g., import checks)
+│   └── skills/                      # Modular skill library
 ├── eval/                            # Evaluation scripts and metrics
+├── tests/                           # Test and diagnostic scripts
 ├── config/                          # Navigation waypoints and robot config
 ├── docker/                          # Container and deployment assets
 ├── report/                          # LaTeX report sources and figures
 ├── .env.example                     # Template for API keys and network overrides
 ├── run_agent.sh                     # Agent launcher (configurable via env vars)
-├── eval_setup.sh                    # Eval environment setup helper
-├── embodied_agent.py                # Main agent loop
-├── perception_manager_v2.py         # RGB-D perception + 3D projection
-├── state_manager.py                 # Robot state + symbolic rule engine
-├── vlm_reasoner.py                  # Gemini 2.0 Flash VLM client
-└── yolo_service.py                  # HTTP YOLO detection microservice (port 5001)
+└── eval_setup.sh                    # Eval environment setup helper
 ```
 
 ---
