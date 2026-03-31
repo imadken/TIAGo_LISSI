@@ -78,12 +78,26 @@ The agent accepts natural-language commands, reasons about the 3D scene using a 
 
 ## Quick Start
 
+### Environment (uv recommended)
+
+```bash
+# Install uv if needed: https://github.com/astral-sh/uv#installation
+uv venv .venv              # create a local venv (or reuse an existing one)
+source .venv/bin/activate
+uv pip sync requirements.txt  # install from requirements.txt
+```
+
+> Prefer running modules with `python -m …` from the repo root, or export the
+> project root onto `PYTHONPATH` to avoid import errors when invoking scripts:
+> `export PYTHONPATH=$(pwd):${PYTHONPATH}`
+
+### Minimal run steps
 
 1. Install workstation prerequisites (Python 3.10+, Docker) and the ROS container following [docs/INSTALLATION_MANUAL.md](docs/INSTALLATION_MANUAL.md). Then install Python dependencies:
    ```bash
-   python3 -m venv .venv
+   uv venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   uv pip sync requirements.txt
    ```
 2. Copy `.env.example` to `.env`, then add your `EDENAI_API_KEY` and `GROQ_API_KEY`. Override network variables (`ROBOT_IP`, `HOST_IP`, `ROBOT_HOSTNAME`) as needed.
 3. Start perception services when required:
