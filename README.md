@@ -225,6 +225,7 @@ tiago-embodied-agent/
 
 | Document | Description |
 |----------|-------------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution process and expectations (new skills first) |
 | [docs/README.md](docs/README.md) | Index of all documentation |
 | [docs/INSTALLATION_MANUAL.md](docs/INSTALLATION_MANUAL.md) | Complete setup guide from zero |
 | [docs/USER_MANUAL_COMPLETE.md](docs/USER_MANUAL_COMPLETE.md) | Full live-robot workflow and ROS Docker setup |
