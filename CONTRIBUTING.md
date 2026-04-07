@@ -25,14 +25,25 @@ Other contributions are also welcome, including:
 
 3. **Manage dependencies carefully**
    - Add new dependencies only when necessary.
-   - Pin and document dependency changes in `requirements.txt`.
+   - This project uses **uv** for dependency management. New or changed dependencies must be reflected in `pyproject.toml` (the canonical dependency file). `requirements.txt` is kept only as a first-time bootstrap reference and must not be treated as the primary source of truth after the project is initialized.
    - Explain why a new dependency is required in your PR.
 
-4. **Keep changes focused and minimal**
+4. **Test your changes**
+   - All changes must be validated with tests.
+   - Run existing tests in `tests/` to confirm nothing is broken.
+   - If your change introduces new behavior that is not covered by the current test suite, add new tests in `tests/` following the patterns already in place.
+
+5. **Respect the uv workflow**
+   - This project uses [uv](https://github.com/astral-sh/uv) as the Python package manager.
+   - Always use `uv` commands for environment and dependency management (e.g. `uv venv`, `uv pip sync`, `uv add`).
+   - Do **not** bypass `uv` by invoking plain `pip install` or manually editing lock files.
+   - The `pyproject.toml` file is the authoritative source for project metadata and dependencies; update it (not `requirements.txt`) when adding or removing packages after the project is initialized.
+
+6. **Keep changes focused and minimal**
    - Submit small, reviewable PRs.
    - Avoid unrelated refactors in the same PR.
 
-5. **Document behavior changes**
+7. **Document behavior changes**
    - Update docs in `docs/` and/or `README.md` when behavior, setup, or usage changes.
 
 ## Pull request process
